@@ -1,5 +1,6 @@
 
 # react-native-attitude
+Provides Attitude (Roll, Pitch & Heading) in degrees for both iOS and Android.
 
 ## Getting started
 
