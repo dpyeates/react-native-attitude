@@ -1,5 +1,8 @@
 
 # react-native-attitude
+
+** UNDER DEVELOPMENT - DO NOT USE **
+
 Provides Attitude (Roll, Pitch & Heading) in degrees for both iOS and Android.
 
 ## Getting started
@@ -42,4 +45,3 @@ import RNAttitude from 'react-native-attitude';
 // TODO: What to do with the module?
 RNAttitude;
 ```
-  
