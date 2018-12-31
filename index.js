@@ -3,7 +3,7 @@ import {NativeEventEmitter, NativeModules} from 'react-native';
 
 const {RNAttitude} = NativeModules;
 
-const AhrsEventEmitter = new NativeEventEmitter(RNAttitude);
+const AttitudeEventEmitter = new NativeEventEmitter(RNAttitude);
 
 // the following arrays contain the subscription listeners for
 //  all the attitude and heading watchers.
@@ -15,7 +15,7 @@ let headingSubscriptions = [];
 let attitudeUpdatesEnabled = false;
 let headingUpdatesEnabled = false;
 
-const Ahrs = {
+const Attitude = {
   // Starts watching/observing of attitude
   // The success function is called upon every change
   watchAttitude: function(success: Function): number {
@@ -24,7 +24,7 @@ const Ahrs = {
       attitudeUpdatesEnabled = true;
     }
     const watchID = attitudeSubscriptions.length;
-    attitudeSubscriptions.push(AhrsEventEmitter.addListener('attitudeDidChange', success));
+    attitudeSubscriptions.push(AttitudeEventEmitter.addListener('attitudeDidChange', success));
     return watchID;
   },
 
@@ -36,7 +36,7 @@ const Ahrs = {
       headingUpdatesEnabled = true;
     }
     const watchID = headingSubscriptions.length;
-    headingSubscriptions.push(AhrsEventEmitter.addListener('headingDidChange', success));
+    headingSubscriptions.push(AttitudeEventEmitter.addListener('headingDidChange', success));
     return watchID;
   },
 
