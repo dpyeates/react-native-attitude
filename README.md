@@ -15,7 +15,6 @@ Provides Attitude (Roll, Pitch & Heading) in degrees for both iOS and Android.
 
 ### Manual installation
 
-
 #### iOS
 
 1. In XCode, in the project navigator, right click `Libraries` ➜ `Add Files to [your project's name]`
@@ -40,7 +39,7 @@ Provides Attitude (Roll, Pitch & Heading) in degrees for both iOS and Android.
 
 ## Usage
 ```javascript
-import RNAttitude from 'react-native-attitude';
+import Attitude from 'react-native-attitude';
 
 // TODO: What to do with the module?
 RNAttitude;
