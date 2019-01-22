@@ -18,13 +18,21 @@
 
 #define DEGTORAD 0.017453292
 #define RADTODEG 57.29577951
-#define TRIGGER 0.25
+#define MOTIONTRIGGER 0.25
+#define PRESSURETRIGGER 0.0366 // approx 1ft
+
 
 @implementation RNAttitude
 {
+    // all angles are in degrees
+    // speed in metres per second
+    // altitude in metres
+    // pressure in millibars
     bool hasAttitudeListeners;
     bool hasHeadingListeners;
+    bool hasAltitudeListeners;
     bool inverseReferenceInUse;
+    bool isAltimeterActive;
     float roll;
     float pitch;
     float yaw;
@@ -34,10 +42,14 @@
     float lastHeadingSent;
     float lastRollSent;
     float lastPitchSent;
+    float lastPressure;
+    double lastTime;
     CMQuaternion quaternion;
     CMQuaternion inverseReferenceQuaternion;
     CMMotionManager *motionManager;
-    NSOperationQueue *operationQueue;
+    CMAltimeter *altimeterManager;
+    NSOperationQueue *attitudeQueue;
+    NSOperationQueue *altimeterQueue;
 }
 
 // To export a module named RNAttitude
@@ -50,28 +62,45 @@ RCT_EXPORT_MODULE();
 
 - (NSArray<NSString *> *)supportedEvents
 {
-    return @[@"attitudeDidChange", @"headingDidChange"];
+    return @[@"attitudeDidChange", @"headingDidChange", @"altitudeDidChange"];
 }
 
 - (id)init {
     self = [super init];
     if (self) {
+        altimeterManager = 0;
         hasAttitudeListeners = false;
         hasHeadingListeners = false;
+        hasAltitudeListeners = false;
+        isAltimeterActive = false;
         lastHeadingSent = FLT_MAX;
         lastRollSent = FLT_MAX;
         lastPitchSent = FLT_MAX;
+        lastPressure = FLT_MAX;
+        lastTime = 0;
         inverseReferenceInUse = false;
         refPitch = 0;
         refRoll = 0;
+        
         // Allocate and initialize the motion manager.
         motionManager = [[CMMotionManager alloc] init];
         [motionManager setShowsDeviceMovementDisplay:YES];
         [motionManager setDeviceMotionUpdateInterval:1.0/30];
-        // Allocate and initialize the operation queue.
-        operationQueue = [[NSOperationQueue alloc] init];
-        [operationQueue setName:@"DeviceMotion"];
-        [operationQueue setMaxConcurrentOperationCount:1];
+       
+        // Allocate and initialize the operation queue for attitude updates.
+        attitudeQueue = [[NSOperationQueue alloc] init];
+        [attitudeQueue setName:@"DeviceMotion"];
+        [attitudeQueue setMaxConcurrentOperationCount:1];
+        
+        // Allocate and initialize the altimeter if available on this device
+        if ([CMAltimeter isRelativeAltitudeAvailable]) {
+            altimeterManager = [[CMAltimeter alloc] init];
+            
+            // Allocate and initialize the operation queue for altitude updates.
+            altimeterQueue = [[NSOperationQueue alloc] init];
+            [altimeterQueue setName:@"DeviceAltitude"];
+            [altimeterQueue setMaxConcurrentOperationCount:1];
+        }
     }
     return self;
 }
@@ -81,47 +110,64 @@ RCT_EXPORT_MODULE();
 // Called when we have a new heading listener
 RCT_EXPORT_METHOD(startObservingHeading) {
     hasHeadingListeners = YES;
-    if(!motionManager.isDeviceMotionActive) {
-        [self start];
-    }
-    RCTLogInfo(@"RNAttitude has started heading updates");
-}
-
-// Called when we have a new attitude listener
-RCT_EXPORT_METHOD(startObservingAttitude) {
-    hasAttitudeListeners = YES;
-    if(!motionManager.isDeviceMotionActive) {
-        [self start];
-    }
-    RCTLogInfo(@"RNAttitude has started attitude updates");
+    [self configure];
 }
 
 // Called when we have are removing the last heading listener
 RCT_EXPORT_METHOD(stopObservingHeading) {
     hasHeadingListeners = NO;
-    if(!hasAttitudeListeners && motionManager.isDeviceMotionActive) {
-        [self stop];
-    }
-    RCTLogInfo(@"RNAttitude has stopped heading updates");
+    lastHeadingSent = FLT_MAX;
+    [self configure];
+}
+
+// Called when we have a new attitude listener
+RCT_EXPORT_METHOD(startObservingAttitude) {
+    hasAttitudeListeners = YES;
+    [self configure];
 }
 
 // Called when we have are removing the last attitude listener
-RCT_EXPORT_METHOD(stopAttitudeHeading) {
+RCT_EXPORT_METHOD(stopObservingAttitude) {
     hasAttitudeListeners = NO;
-    if(!hasHeadingListeners && motionManager.isDeviceMotionActive) {
-        [self stop];
+    lastRollSent = FLT_MAX;
+    lastPitchSent = FLT_MAX;
+    [self configure];
+}
+
+// Called when we have a new altitude listener
+RCT_EXPORT_METHOD(startObservingAltitude) {
+    if (altimeterManager) {
+        hasAltitudeListeners = YES;
+        [self configure];
     }
-    RCTLogInfo(@"RNAttitude has stopped attitude updates");
+}
+
+// Called when we have are removing the last altitude listener
+RCT_EXPORT_METHOD(stopObservingAltitude) {
+     if (altimeterManager) {
+         hasAltitudeListeners = NO;
+         lastPressure = FLT_MAX;
+         lastTime = DBL_MAX;
+         [self configure];
+     }
 }
 
 // Will be called when this module's last listener is removed, or on dealloc.
 RCT_EXPORT_METHOD(stopObserving) {
-    hasAttitudeListeners = NO;
-    hasHeadingListeners = NO;
-    if(motionManager.isDeviceMotionActive) {
-        [self stop];
-    }
-    RCTLogInfo(@"RNAttitude has stopped all attitude and heading updates");
+     [motionManager stopDeviceMotionUpdates];
+     if (altimeterManager) {
+         [altimeterManager stopRelativeAltitudeUpdates];
+     }
+     hasAttitudeListeners = NO;
+     hasHeadingListeners = NO;
+     hasAltitudeListeners = NO;
+     isAltimeterActive = false;
+     lastHeadingSent = FLT_MAX;
+     lastRollSent = FLT_MAX;
+     lastPitchSent = FLT_MAX;
+     lastPressure = FLT_MAX;
+     lastTime = DBL_MAX;
+     RCTLogInfo(@"RNAttitude has stopped all attitude, heading and altitude updates");
 }
 
 // Called to zero the current roll and pitch values as the reference attitude
@@ -135,6 +181,18 @@ RCT_EXPORT_METHOD(zero)
     RCTLogInfo(@"RNAttitude is taking a new reference attitude");
 }
 
+// Called to indicate if this device offers barometric altitude updates
+RCT_REMAP_METHOD(hasBarometer,
+                 hasBarometerWithResolver:(RCTPromiseResolveBlock)resolve
+                 rejecter:(RCTPromiseRejectBlock)reject)
+{
+    if (altimeterManager) {
+        resolve([NSNumber numberWithBool:true]);
+    } else {
+        resolve([NSNumber numberWithBool:false]);
+    }
+}
+
 // Called to reset any in use reference attitudes and start using the baseline attitude reference
 RCT_EXPORT_METHOD(reset)
 {
@@ -145,11 +203,13 @@ RCT_EXPORT_METHOD(reset)
 #pragma mark - Private API
 
 // Kicks off the motion processing
--(void)start
+-(void)configure
 {
-    CMDeviceMotionHandler handler = ^(CMDeviceMotion * _Nullable motion, NSError * _Nullable error)
+    // the attitude update handler
+    CMDeviceMotionHandler attitudeHandler = ^(CMDeviceMotion * _Nullable motion, NSError * _Nullable error)
     {
-        UIInterfaceOrientation orientation = [UIApplication sharedApplication].statusBarOrientation;
+        //UIInterfaceOrientation orientation = [UIApplication sharedApplication].statusBarOrientation;
+        UIDeviceOrientation orientation = [[UIDevice currentDevice] orientation];
         int headingAdjustment = -90;
         int rollAdjustment = 0;
         if(orientation == UIInterfaceOrientationLandscapeLeft) {
@@ -183,8 +243,8 @@ RCT_EXPORT_METHOD(reset)
         // Send change events to the Javascript side
         // To avoid flooding the bridge, we only send if we have listeners, and the data has significantly changed
         if(hasAttitudeListeners) {
-            if((lastRollSent == FLT_MAX || (roll > (lastRollSent+TRIGGER) || roll < (lastRollSent-TRIGGER))) ||
-               (lastPitchSent == FLT_MAX || (pitch > (lastPitchSent+TRIGGER) || pitch < (lastPitchSent-TRIGGER)))) {
+            if((lastRollSent == FLT_MAX || (roll > (lastRollSent+MOTIONTRIGGER) || roll < (lastRollSent-MOTIONTRIGGER))) ||
+               (lastPitchSent == FLT_MAX || (pitch > (lastPitchSent+MOTIONTRIGGER) || pitch < (lastPitchSent-MOTIONTRIGGER)))) {
                 [self sendEventWithName:@"attitudeDidChange"
                                    body:@{
                                           @"attitude": @{
@@ -199,20 +259,57 @@ RCT_EXPORT_METHOD(reset)
             }
         }
         if(hasHeadingListeners) {
-            if(lastHeadingSent == FLT_MAX || (heading > (lastHeadingSent+TRIGGER) || heading < (lastHeadingSent-TRIGGER))) {
+            if(lastHeadingSent == FLT_MAX || (heading > (lastHeadingSent+MOTIONTRIGGER) || heading < (lastHeadingSent-MOTIONTRIGGER))) {
                 [self sendEventWithName:@"headingDidChange" body:@{@"heading": @(heading)}];
                 lastHeadingSent = heading;
             }
         }
     };
     
-    // Start motion updates.
-    [motionManager startDeviceMotionUpdatesUsingReferenceFrame:CMAttitudeReferenceFrameXMagneticNorthZVertical toQueue:operationQueue withHandler:handler];
-}
-
--(void)stop
-{
-    [motionManager stopDeviceMotionUpdates];
+    // the altimeter update handler
+    CMAltitudeHandler altimeterHandler = ^(CMAltitudeData *altitudeData, NSError *error) {
+        long relativeAltitude = altitudeData.relativeAltitude.longValue;
+        float pressure = altitudeData.pressure.doubleValue * 10.0; // the x10 converts to millibar
+        double currentTime = [[NSDate date] timeIntervalSince1970];
+        double timeSinceLastUpdate = (currentTime - lastTime);
+        float verticalSpeed = 0;
+        // calculate vertical speed
+        if(lastPressure != FLT_MAX && lastTime != DBL_MAX) {
+            verticalSpeed = (getAltitude(lastPressure) - getAltitude(pressure)) / timeSinceLastUpdate;
+        }
+        // is any one listening? We don't want to send over the bridge if not.
+        if(hasAltitudeListeners) {
+            [self sendEventWithName:@"altitudeDidChange" body:@{
+                                                                @"timeSinceLastUpdate": @(timeSinceLastUpdate),
+                                                                @"relativeAltitude": @(relativeAltitude),
+                                                                @"verticalSpeed": @(verticalSpeed),
+                                                                @"pressure": @(pressure)
+                                                            }
+             ];
+        }
+        lastPressure = pressure;
+        lastTime = currentTime;
+    };
+    
+    if((hasAttitudeListeners || hasHeadingListeners) && !motionManager.isDeviceMotionActive) {
+        [motionManager startDeviceMotionUpdatesUsingReferenceFrame:CMAttitudeReferenceFrameXMagneticNorthZVertical toQueue:attitudeQueue withHandler:attitudeHandler];
+        RCTLogInfo(@"RNAttitude has started DeviceMotion updates");
+    }
+    else if((!hasHeadingListeners && !hasAttitudeListeners) && motionManager.isDeviceMotionActive) {
+        [motionManager stopDeviceMotionUpdates];
+        RCTLogInfo(@"RNAttitude has stopped DeviceMotion updates");
+    }
+    
+    if(altimeterManager && hasAltitudeListeners && !isAltimeterActive) {
+        isAltimeterActive = true;
+        [altimeterManager startRelativeAltitudeUpdatesToQueue:altimeterQueue withHandler:altimeterHandler];
+        RCTLogInfo(@"RNAttitude has started Altimeter updates");
+    }
+    else if(altimeterManager && !hasAltitudeListeners && isAltimeterActive) {
+        [altimeterManager stopRelativeAltitudeUpdates];
+        isAltimeterActive = false;
+        RCTLogInfo(@"RNAttitude has stopped Altimeter updates");
+    }
 }
 
 CMQuaternion getWorldTransformationQuaternion() {
@@ -280,11 +377,22 @@ void computeEulerAnglesFromQuaternion(CMQuaternion q, float *roll, float *pitch,
     }
 }
 
+// limits a value between a maximum and minimum
 float normalizeRange(float val, float min, float max) {
     const float step = max - min;
     while(val >= max) val -= step;
     while(val < min) val += step;
     return val;
+}
+
+// Computes the Altitude in meters from the atmospheric pressure and the pressure at sea level.
+// p0 pressure at sea level
+// p atmospheric pressure
+// returns an altitude in meters
+float getAltitude(float p) {
+    const float p0 = 1013.25;
+    const float coef = 1.0f / 5.255;
+    return 44330.0 * (1.0 - pow(p / p0, coef));
 }
 
 @end
