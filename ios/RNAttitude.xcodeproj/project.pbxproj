@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		95F5890721FC7DCE00D37D71 /* RNBarometer.m in Sources */ = {isa = PBXBuildFile; fileRef = 95F5890621FC7DCE00D37D71 /* RNBarometer.m */; };
 		B3E7B58A1CC2AC0600A0062D /* RNAttitude.m in Sources */ = {isa = PBXBuildFile; fileRef = B3E7B5891CC2AC0600A0062D /* RNAttitude.m */; };
 /* End PBXBuildFile section */
 
@@ -24,6 +25,8 @@
 
 /* Begin PBXFileReference section */
 		134814201AA4EA6300B7C361 /* libRNAttitude.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libRNAttitude.a; sourceTree = BUILT_PRODUCTS_DIR; };
+		95F5890521FC7DCE00D37D71 /* RNBarometer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RNBarometer.h; sourceTree = "<group>"; };
+		95F5890621FC7DCE00D37D71 /* RNBarometer.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = RNBarometer.m; sourceTree = "<group>"; };
 		B3E7B5881CC2AC0600A0062D /* RNAttitude.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RNAttitude.h; sourceTree = "<group>"; };
 		B3E7B5891CC2AC0600A0062D /* RNAttitude.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = RNAttitude.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -50,6 +53,8 @@
 		58B511D21A9E6C8500147676 = {
 			isa = PBXGroup;
 			children = (
+				95F5890521FC7DCE00D37D71 /* RNBarometer.h */,
+				95F5890621FC7DCE00D37D71 /* RNBarometer.m */,
 				B3E7B5881CC2AC0600A0062D /* RNAttitude.h */,
 				B3E7B5891CC2AC0600A0062D /* RNAttitude.m */,
 				134814211AA4EA7D00B7C361 /* Products */,
@@ -113,6 +118,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B3E7B58A1CC2AC0600A0062D /* RNAttitude.m in Sources */,
+				95F5890721FC7DCE00D37D71 /* RNBarometer.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -204,7 +210,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				HEADER_SEARCH_PATHS = (
-				"$(inherited)",
+					"$(inherited)",
 					/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include,
 					"$(SRCROOT)/../../../React/**",
 					"$(SRCROOT)/../../react-native/React/**",

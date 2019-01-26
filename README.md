@@ -1,9 +1,7 @@
 
 # react-native-attitude
 
-** UNDER DEVELOPMENT - DO NOT USE **
-
-Provides Attitude (Roll, Pitch & Heading) in degrees for both iOS and Android.
+Provides Attitude (Roll, Pitch & Heading) in degrees for iOS. (Android in the future)
 
 ## Getting started
 
@@ -36,11 +34,51 @@ Provides Attitude (Roll, Pitch & Heading) in degrees for both iOS and Android.
   	```
       compile project(':react-native-attitude')
   	```
-
 ## Usage
 ```javascript
-import Attitude from 'react-native-attitude';
+import {Attitude, Barometer} from 'react-native-attitude';
+```
 
-// TODO: What to do with the module?
-RNAttitude;
+### Attitude (Pitch, Roll and Heading in degrees)
+```js
+attitudeWatchID = Attitude.watchAttitude((update) => {
+    /**
+     * update.roll (in degrees -180 (left) +180 (right))
+     * update.pitch (in degrees  -90 (down) +90 (up))
+    **/
+    });
+```
+```js
+Attitude.clearWatchAttitude(attitudeWatchID);
+```
+```js
+headingWatchID = Attitude.watchHeading((update) => {
+    /**
+     * update.heading (in degrees 0-360 referenced to magnetic north)
+    **/
+    });
+```
+```js
+Attitude.clearWatchHeading(headingWatchID);
+```
+```js
+Attitude.stopObserving();
+```
+
+### Barometer/Altitude
+```js
+altitudeWatchID = Barometer.watch((update) => {
+    /**
+     * update.timeSinceLastUpdate (in seconds)
+     * update.relativeAltitude (+/- deviation in m since the start of watch - will be 0 on start)
+     * update.verticalSpeed (in metres per minute)
+     * update.presure (current air pressure in millibars)
+    **/
+    });
+```
+```js
+Barometer.clearWatch(altitudeWatchID);
+```
+```js
+Barometer.stopObserving();
 ```
