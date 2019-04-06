@@ -59,8 +59,8 @@ const Barometer = {
   },
 
   // Lets us know if this device has barometer capability or not
-  isAvailable: function() {
-    return RNBarometer.isAvailable();
+  isAvailable: async function() {
+    return await RNBarometer.isAvailable();
   }
 
 };

@@ -29,18 +29,6 @@ const Attitude = {
     return watchID;
   },
 
-  // Starts watching/observing of heading
-  // The success function is called upon every change
-  watchHeading: function(success: Function): number {
-    if (!headingUpdatesEnabled) {
-      RNAttitude.startObservingHeading();
-      headingUpdatesEnabled = true;
-    }
-    const watchID = headingSubscriptions.length;
-    headingSubscriptions.push(AttitudeEventEmitter.addListener('headingDidChange', success));
-    return watchID;
-  },
-
   // Stops all watching/observing of the passed in watch ID
   clearWatchAttitude: function(watchID: number): void {
     const sub = attitudeSubscriptions[watchID];
@@ -61,6 +49,18 @@ const Attitude = {
       RNAttitude.stopObservingAttitude();
       attitudeUpdatesEnabled = false;
     }
+  },
+
+  // Starts watching/observing of heading
+  // The success function is called upon every change
+  watchHeading: function(success: Function): number {
+    if (!headingUpdatesEnabled) {
+      RNAttitude.startObservingHeading();
+      headingUpdatesEnabled = true;
+    }
+    const watchID = headingSubscriptions.length;
+    headingSubscriptions.push(AttitudeEventEmitter.addListener('headingDidChange', success));
+    return watchID;
   },
 
   // Stops all watching/observing of the passed in watch ID
