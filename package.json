@@ -1,6 +1,6 @@
 {
   "name": "react-native-attitude",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Obtain device attitude (roll, pitch and yaw)",
   "main": "index.js",
   "scripts": {

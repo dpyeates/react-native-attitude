@@ -14,8 +14,7 @@
 #import <React/RCTEventDispatcher.h>
 #import <React/RCTLog.h>
 
-#import <CoreMotion/CoreMotion.h>
-
+#define UPDATERATEHZ 30
 #define DEGTORAD 0.017453292
 #define RADTODEG 57.29577951
 #define MOTIONTRIGGER 0.25
@@ -25,19 +24,10 @@
 
 RCT_EXPORT_MODULE();
 
-+ (BOOL)requiresMainQueueSetup
-{
-    return NO;
-}
-
-- (NSArray<NSString *> *)supportedEvents
-{
-    return @[@"attitudeDidChange", @"headingDidChange"];
-}
-
 - (id)init {
     self = [super init];
     if (self) {
+        // configure default values
         hasAttitudeListeners = false;
         hasHeadingListeners = false;
         lastHeadingSent = FLT_MAX;
@@ -50,7 +40,7 @@ RCT_EXPORT_MODULE();
         // Allocate and initialize the motion manager.
         motionManager = [[CMMotionManager alloc] init];
         [motionManager setShowsDeviceMovementDisplay:YES];
-        [motionManager setDeviceMotionUpdateInterval:1.0/30]; // request 30Hz updates
+        [motionManager setDeviceMotionUpdateInterval:1.0/UPDATERATEHZ];
        
         // Allocate and initialize the operation queue for attitude updates.
         attitudeQueue = [[NSOperationQueue alloc] init];
@@ -59,6 +49,21 @@ RCT_EXPORT_MODULE();
     }
     return self;
 }
+
++ (BOOL)requiresMainQueueSetup
+{
+    return NO;
+}
+
+#pragma mark - React event emitter
+
+// the supported events that the Javascript side can subscribe to
+- (NSArray<NSString *> *)supportedEvents
+{
+    return @[@"attitudeDidChange", @"headingDidChange"];
+}
+
+#pragma mark - React bridge methods
 
 // Called when we have a new heading listener
 RCT_EXPORT_METHOD(startObservingHeading) {
@@ -87,7 +92,7 @@ RCT_EXPORT_METHOD(stopObservingAttitude) {
     [self configure];
 }
 
-// Will be called when this module's last listener is removed, or on dealloc.
+// Called when this module's last listener is removed, or on dealloc.
 RCT_EXPORT_METHOD(stopObserving) {
      [motionManager stopDeviceMotionUpdates];
      hasAttitudeListeners = NO;
@@ -113,33 +118,47 @@ RCT_EXPORT_METHOD(zero)
 RCT_EXPORT_METHOD(reset)
 {
     inverseReferenceInUse = false;
-    RCTLogInfo(@"RNAttitude reference attitude reset");
+    RCTLogInfo(@"RNAttitude reference attitude reset to default");
 }
+
+#pragma mark - The main configuration method
 
 -(void)configure
 {
     // the attitude update handler
     CMDeviceMotionHandler attitudeHandler = ^(CMDeviceMotion * _Nullable motion, NSError * _Nullable error)
     {
+        // get the current device orientation
         UIDeviceOrientation orientation = [[UIDevice currentDevice] orientation];
-        int headingAdjustment = -90;
+        
+        // setup the 'default' heading and roll adjustment for portrait orientation
+        int headingAdjustment = 0;
         int rollAdjustment = 0;
+        
+        // adjust if we are holding the device in either of the landscape orientations
         if(orientation == UIInterfaceOrientationLandscapeLeft) {
-            headingAdjustment = -180;
+            headingAdjustment = -90;
             rollAdjustment = -90;
         }
         else if(orientation == UIInterfaceOrientationLandscapeRight) {
-            headingAdjustment = 180;
+            headingAdjustment = 90;
             rollAdjustment = 90;
         }
-        // Get the core IOS device motion quaternion
+        
+        // Get the core IOS device motion quaternion and heading values (requires iOS 11 or above)
         CMQuaternion q = [[motion attitude] quaternion];
+        double heading = 0;
+        if (@available(iOS 11.0, *)) {
+            heading = [motion heading];
+        }
+        
         // Create a quaternion representing an adjustment of 90 degrees to the core IOS
         // reference frame. This moves it from the reference being sitting flat on
         // the table to a frame where the user is holding looking 'through' the screen.
         quaternion = quaternionMultiply(q, getWorldTransformationQuaternion());
-        // If we are using a pitch/roll reference 'offset' then apply the required
-        // transformation here. This is doing the same as the built-in multiplyByInverseOfAttitude.
+        
+        // If we are using a pitch/roll reference 'offset' then apply the required transformation here.
+        // This is doing the same as the built-in multiplyByInverseOfAttitude.
         if(inverseReferenceInUse) {
             CMQuaternion qRef = quaternionMultiply(inverseReferenceQuaternion, quaternion);
             computeEulerAnglesFromQuaternion(qRef, &roll, &pitch, &yaw);
@@ -147,11 +166,18 @@ RCT_EXPORT_METHOD(reset)
         else {
             computeEulerAnglesFromQuaternion(quaternion, &roll, &pitch, &yaw);
         }
-        // calculate a 0-360 heading based upon -180<->180 yaw
-        heading = 360 - normalizeRange(yaw, 1, 360);
+        
+        //RCTLogInfo(@"RNAttitude heading = %d, %d", (int)heading, headingAdjustment);
+        
         // adjust roll and heading for orientation
-        heading = normalizeRange(heading + headingAdjustment, 1, 360);
-        roll = normalizeRange(roll + rollAdjustment, -180, 180);
+        if(headingAdjustment != 0) {
+            heading = normalizeRange(heading + headingAdjustment, 1, 360);
+        }
+        
+        if(rollAdjustment != 0) {
+            roll = normalizeRange(roll + rollAdjustment, -180, 180);
+        }
+        
         // Send change events to the Javascript side
         // To avoid flooding the bridge, we only send if we have listeners, and the data has significantly changed
         if(hasAttitudeListeners) {
@@ -188,6 +214,8 @@ RCT_EXPORT_METHOD(reset)
     }
 
 }
+
+#pragma mark - Private methods
 
 CMQuaternion getWorldTransformationQuaternion() {
     const float worldAngle = 90 * DEGTORAD;
