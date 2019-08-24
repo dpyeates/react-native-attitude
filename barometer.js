@@ -14,7 +14,7 @@ const Barometer = {
 
   // Starts watching/observing of barometer/altitude
   // The success function is called upon every change
-  watch: function(success: Function): number {
+  watch: function(success) {
     if (!altitudeUpdatesEnabled) {
       RNBarometer.startObserving();
       altitudeUpdatesEnabled = true;
@@ -25,7 +25,7 @@ const Barometer = {
   },
 
   // Stops all watching/observing of the passed in watch ID
-  clearWatch: function(watchID: number): void {
+  clearWatch: function(watchID) {
     const sub = altitudeSubscriptions[watchID];
     if (!sub) {
       // Silently exit when the watchID is invalid or already cleared
@@ -47,7 +47,7 @@ const Barometer = {
   },
 
   // Stop all watching/observing
-  stopObserving: function(): void {
+  stopObserving: function() {
     for (let ii = 0; ii < altitudeSubscriptions.length; ii++) {
       const sub = altitudeSubscriptions[ii];
       if (sub) {

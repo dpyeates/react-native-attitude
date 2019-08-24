@@ -1,7 +1,7 @@
 {
   "name": "react-native-attitude",
-  "version": "1.0.7",
-  "description": "Obtain device attitude (roll, pitch and yaw)",
+  "version": "1.0.8",
+  "description": "Obtain device attitude (roll, pitch, heading), and altitude",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

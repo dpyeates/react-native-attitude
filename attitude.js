@@ -11,7 +11,7 @@ let attitudeSubscriptions = [];
 let headingSubscriptions = [];
 
 // the following '*UpdateEnabled' flags indicate if we have requested
-// the relevent updates (attitude, heading) from the native side
+// the relevant updates (attitude, heading) from the native side
 let attitudeUpdatesEnabled = false;
 let headingUpdatesEnabled = false;
 
@@ -19,7 +19,7 @@ const Attitude = {
   
   // Starts watching/observing of attitude
   // The success function is called upon every change
-  watchAttitude: function(success: Function): number {
+  watchAttitude: function(success) {
     if (!attitudeUpdatesEnabled) {
       RNAttitude.startObservingAttitude();
       attitudeUpdatesEnabled = true;
@@ -30,7 +30,7 @@ const Attitude = {
   },
 
   // Stops all watching/observing of the passed in watch ID
-  clearWatchAttitude: function(watchID: number): void {
+  clearWatchAttitude: function(watchID) {
     const sub = attitudeSubscriptions[watchID];
     if (!sub) {
       // Silently exit when the watchID is invalid or already cleared
@@ -53,7 +53,7 @@ const Attitude = {
 
   // Starts watching/observing of heading
   // The success function is called upon every change
-  watchHeading: function(success: Function): number {
+  watchHeading: function(success) {
     if (!headingUpdatesEnabled) {
       RNAttitude.startObservingHeading();
       headingUpdatesEnabled = true;
@@ -64,7 +64,7 @@ const Attitude = {
   },
 
   // Stops all watching/observing of the passed in watch ID
-  clearWatchHeading: function(watchID: number): void {
+  clearWatchHeading: function(watchID) {
     const sub = headingSubscriptions[watchID];
     if (!sub) {
       // Silently exit when the watchID is invalid or already cleared
@@ -86,7 +86,7 @@ const Attitude = {
   },
 
   // Stop all watching/observing of both attitude and heading
-  stopObserving: function(): void {
+  stopObserving: function() {
     let ii = 0;
     RNAttitude.stopObserving();
     for (ii = 0; ii < attitudeSubscriptions.length; ii++) {
@@ -107,13 +107,13 @@ const Attitude = {
     headingUpdatesEnabled = false;
   },
 
-  // Zeros our attitude based on our current attitude
-  zero: function(): void {
+  // Zeros the baseline attitude based on our current attitude
+  zero: function() {
     RNAttitude.zero();
   },
 
-  // Resets our attitude reference
-  reset: function(): void {
+  // Resets the attitude reference
+  reset: function() {
     RNAttitude.reset();
   },
 };

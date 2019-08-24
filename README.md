@@ -72,7 +72,7 @@ altitudeWatchID = Barometer.watch((update) => {
      * update.timeSinceLastUpdate (in seconds)
      * update.relativeAltitude (+/- deviation in m since the start of watch - will be 0 on start)
      * update.verticalSpeed (in metres per minute)
-     * update.presure (current air pressure in millibars)
+     * update.pressure (current air pressure in millibars)
     **/
     });
 ```

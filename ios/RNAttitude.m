@@ -6,6 +6,7 @@
 // https://stackoverflow.com/questions/19239482/using-quaternion-instead-of-roll-pitch-and-yaw-to-track-device-motion
 // https://stackoverflow.com/questions/11103683/euler-angle-to-quaternion-then-quaternion-to-euler-angle
 // https://stackoverflow.com/questions/14482518/how-multiplybyinverseofattitude-cmattitude-class-is-implemented
+// https://stackoverflow.com/questions/5782658/extracting-yaw-from-a-quaternion
 #import "RNAttitude.h"
 
 #import <React/RCTAssert.h>
