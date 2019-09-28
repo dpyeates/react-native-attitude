@@ -5,35 +5,82 @@ Provides Attitude (Roll, Pitch & Heading) in degrees for iOS. (Android in the fu
 
 ## Getting started
 
-`$ npm install react-native-attitude --save`
+`yarn add react-native-attitude`
 
-### Mostly automatic installation
+or
 
-`$ react-native link react-native-attitude`
+`npm install react-native-attitude --save`
 
-### Manual installation
+### Mostly automatic installation (react-native 0.59 and lower)
 
-#### iOS
+`react-native link react-native-attitude`
 
-1. In XCode, in the project navigator, right click `Libraries` ➜ `Add Files to [your project's name]`
-2. Go to `node_modules` ➜ `react-native-attitude` and add `RNAttitude.xcodeproj`
-3. In XCode, in the project navigator, select your project. Add `libRNAttitude.a` to your project's `Build Phases` ➜ `Link Binary With Libraries`
-4. Run your project (`Cmd+R`)<
+### Manual installation (react-native 0.59 and lower)
 
-#### Android
+<details>
+<summary>Manually link the library on iOS</summary>
 
-1. Open up `android/app/src/main/java/[...]/MainActivity.java`
-  - Add `import com.reactlibrary.RNAttitudePackage;` to the imports at the top of the file
-  - Add `new RNAttitudePackage()` to the list returned by the `getPackages()` method
-2. Append the following lines to `android/settings.gradle`:
-  	```
-  	include ':react-native-attitude'
-  	project(':react-native-attitude').projectDir = new File(rootProject.projectDir, 	'../node_modules/react-native-attitude/android')
-  	```
-3. Insert the following lines inside the dependencies block in `android/app/build.gradle`:
-  	```
-      compile project(':react-native-attitude')
-  	```
+### `Open project.xcodeproj in Xcode`
+
+Drag `RNAttitude.xcodeproj` to your project on Xcode (usually under the Libraries group on Xcode):
+
+![xcode-add](https://facebook.github.io/react-native/docs/assets/AddToLibraries.png)
+
+### Link `libRNAttitude.a` binary with libraries
+
+Click on your main project file (the one that represents the `.xcodeproj`) select `Build Phases` and drag the static library from the `Products` folder inside the Library you are importing to `Link Binary With Libraries` (or use the `+` sign and choose library from the list):
+
+![xcode-link](https://facebook.github.io/react-native/docs/assets/AddToBuildPhases.png)
+
+### Using CocoaPods
+
+Update your `Podfile`
+
+```
+pod 'react-native-attitude', path: '../node_modules/react-native-attitude'
+```
+
+</details>
+
+<details>
+<summary>Manually link the library on Android</summary>
+
+#### `android/settings.gradle`
+```groovy
+include ':react-native-attitude'
+project(':react-native-attitude').projectDir = new File(rootProject.projectDir, '../node_modules/react-native-attitude/android')
+```
+
+#### `android/app/build.gradle`
+```groovy
+dependencies {
+   ...
+   implementation project(':react-native-community-geolocation')
+}
+```
+
+#### `android/app/src/main/.../MainApplication.java`
+On top, where imports are:
+
+```java
+import com.sensorworks.RNAttitudePackage;
+```
+
+Add the `GeolocationPackage` class to your list of exported packages.
+
+```java
+@Override
+protected List<ReactPackage> getPackages() {
+    return Arrays.asList(
+            new MainReactPackage(),
+            new RNAttitudePackage()
+    );
+}
+```
+</details>
+
+Since **react-native 0.60** and higher, [autolinking](https://github.com/react-native-community/cli/blob/master/docs/autolinking.md) makes the installation process simpler
+
 ## Usage
 ```javascript
 import {Attitude, Barometer} from 'react-native-attitude';
