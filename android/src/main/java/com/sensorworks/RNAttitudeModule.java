@@ -1,5 +1,5 @@
 
-package com.reactlibrary;
+package com.sensorworks.RNAttitude;
 
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
