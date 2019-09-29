@@ -1,7 +1,7 @@
 
 # react-native-attitude
 
-Provides Attitude (Roll, Pitch & Heading) in degrees for iOS. (Android in the future)
+Provides Attitude (Roll, Pitch & Heading) in degrees for iOS. (Android in progress - not stable)
 
 ## Getting started
 
@@ -88,25 +88,16 @@ import {Attitude, Barometer} from 'react-native-attitude';
 
 ### Attitude (Pitch, Roll and Heading in degrees)
 ```js
-attitudeWatchID = Attitude.watchAttitude((update) => {
+attitudeWatchID = Attitude.watch((update) => {
     /**
      * update.roll (in degrees -180 (left) +180 (right))
      * update.pitch (in degrees  -90 (down) +90 (up))
-    **/
-    });
-```
-```js
-Attitude.clearWatchAttitude(attitudeWatchID);
-```
-```js
-headingWatchID = Attitude.watchHeading((update) => {
-    /**
      * update.heading (in degrees 0-360 referenced to magnetic north)
     **/
     });
 ```
 ```js
-Attitude.clearWatchHeading(headingWatchID);
+Attitude.clearWatch(attitudeWatchID);
 ```
 ```js
 Attitude.stopObserving();

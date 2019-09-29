@@ -61,71 +61,14 @@ RCT_EXPORT_MODULE();
 // the supported events that the Javascript side can subscribe to
 - (NSArray<NSString *> *)supportedEvents
 {
-    return @[@"attitudeDidChange", @"headingDidChange"];
+    return @[@"attitudeDidChange"];
 }
 
 #pragma mark - React bridge methods
 
-// Called when we have a new heading listener
-RCT_EXPORT_METHOD(startObservingHeading) {
-    hasHeadingListeners = YES;
-    [self configure];
-}
-
-// Called when we have are removing the last heading listener
-RCT_EXPORT_METHOD(stopObservingHeading) {
-    hasHeadingListeners = NO;
-    lastHeadingSent = FLT_MAX;
-    [self configure];
-}
 
 // Called when we have a new attitude listener
-RCT_EXPORT_METHOD(startObservingAttitude) {
-    hasAttitudeListeners = YES;
-    [self configure];
-}
-
-// Called when we have are removing the last attitude listener
-RCT_EXPORT_METHOD(stopObservingAttitude) {
-    hasAttitudeListeners = NO;
-    lastRollSent = FLT_MAX;
-    lastPitchSent = FLT_MAX;
-    [self configure];
-}
-
-// Called when this module's last listener is removed, or on dealloc.
-RCT_EXPORT_METHOD(stopObserving) {
-     [motionManager stopDeviceMotionUpdates];
-     hasAttitudeListeners = NO;
-     hasHeadingListeners = NO;
-     lastHeadingSent = FLT_MAX;
-     lastRollSent = FLT_MAX;
-     lastPitchSent = FLT_MAX;
-     RCTLogInfo(@"RNAttitude has stopped all attitude and heading updates");
-}
-
-// Called to zero the current roll and pitch values as the reference attitude
-RCT_EXPORT_METHOD(zero)
-{
-    inverseReferenceQuaternion.w = quaternion.w;
-    inverseReferenceQuaternion.x = -quaternion.x;
-    inverseReferenceQuaternion.y = -quaternion.y;
-    inverseReferenceQuaternion.z = -quaternion.z;
-    inverseReferenceInUse = true;
-    RCTLogInfo(@"RNAttitude is taking a new reference attitude");
-}
-
-// Called to reset any in use reference attitudes and start using the baseline attitude reference
-RCT_EXPORT_METHOD(reset)
-{
-    inverseReferenceInUse = false;
-    RCTLogInfo(@"RNAttitude reference attitude reset to default");
-}
-
-#pragma mark - The main configuration method
-
--(void)configure
-{
+RCT_EXPORT_METHOD(startObserving) {
     // the attitude update handler
     CMDeviceMotionHandler attitudeHandler = ^(CMDeviceMotion * _Nullable motion, NSError * _Nullable error)
     {
@@ -181,39 +124,54 @@ RCT_EXPORT_METHOD(reset)
         
         // Send change events to the Javascript side
         // To avoid flooding the bridge, we only send if we have listeners, and the data has significantly changed
-        if(hasAttitudeListeners) {
-            if((lastRollSent == FLT_MAX || (roll > (lastRollSent + MOTIONTRIGGER) || roll < (lastRollSent - MOTIONTRIGGER))) ||
-               (lastPitchSent == FLT_MAX || (pitch > (lastPitchSent + MOTIONTRIGGER) || pitch < (lastPitchSent - MOTIONTRIGGER)))) {
-                [self sendEventWithName:@"attitudeDidChange"
-                                   body:@{
-                                          @"attitude": @{
-                                                  @"roll" : @(roll),
-                                                  @"pitch": @(pitch),
-                                                  }
-                                          }
-                 ];
-                lastRollSent = roll;
-                lastPitchSent = pitch;
-            }
-        }
-        if(hasHeadingListeners) {
-            if(lastHeadingSent == FLT_MAX || (heading > (lastHeadingSent + HEADINGTRIGGER) || heading < (lastHeadingSent - HEADINGTRIGGER))) {
-                [self sendEventWithName:@"headingDidChange" body:@{@"heading": @(heading)}];
-                lastHeadingSent = heading;
-            }
+        
+        if((lastRollSent == FLT_MAX || (roll > (lastRollSent + MOTIONTRIGGER) || roll < (lastRollSent - MOTIONTRIGGER))) ||
+            (lastPitchSent == FLT_MAX || (pitch > (lastPitchSent + MOTIONTRIGGER) || pitch < (lastPitchSent - MOTIONTRIGGER))) ||
+            (lastHeadingSent == FLT_MAX || (heading > (lastHeadingSent + HEADINGTRIGGER) || heading < (lastHeadingSent - HEADINGTRIGGER)))) {
+            [self sendEventWithName:@"attitudeDidChange"
+                body:@{
+                    @"roll" : @(roll),
+                    @"pitch": @(pitch),
+                    @"heading": @(heading),
+                }
+            ];
+            lastRollSent = roll;
+            lastPitchSent = pitch;
+            lastHeadingSent = heading;
         }
     };
-
     
-    if((hasAttitudeListeners || hasHeadingListeners) && !motionManager.isDeviceMotionActive) {
+    if(!motionManager.isDeviceMotionActive) {
         [motionManager startDeviceMotionUpdatesUsingReferenceFrame:CMAttitudeReferenceFrameXMagneticNorthZVertical toQueue:attitudeQueue withHandler:attitudeHandler];
         RCTLogInfo(@"RNAttitude has started DeviceMotion updates");
     }
-    else if((!hasHeadingListeners && !hasAttitudeListeners) && motionManager.isDeviceMotionActive) {
-        [motionManager stopDeviceMotionUpdates];
-        RCTLogInfo(@"RNAttitude has stopped DeviceMotion updates");
-    }
+}
 
+// Called when this module's last listener is removed, or on dealloc.
+RCT_EXPORT_METHOD(stopObserving) {
+     [motionManager stopDeviceMotionUpdates];
+     lastHeadingSent = FLT_MAX;
+     lastRollSent = FLT_MAX;
+     lastPitchSent = FLT_MAX;
+     RCTLogInfo(@"RNAttitude has stopped all attitude and heading updates");
+}
+
+// Called to zero the current roll and pitch values as the reference attitude
+RCT_EXPORT_METHOD(zero)
+{
+    inverseReferenceQuaternion.w = quaternion.w;
+    inverseReferenceQuaternion.x = -quaternion.x;
+    inverseReferenceQuaternion.y = -quaternion.y;
+    inverseReferenceQuaternion.z = -quaternion.z;
+    inverseReferenceInUse = true;
+    RCTLogInfo(@"RNAttitude is taking a new reference attitude");
+}
+
+// Called to reset any in use reference attitudes and start using the baseline attitude reference
+RCT_EXPORT_METHOD(reset)
+{
+    inverseReferenceInUse = false;
+    RCTLogInfo(@"RNAttitude reference attitude reset to default");
 }
 
 #pragma mark - Private methods
