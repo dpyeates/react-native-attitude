@@ -15,11 +15,12 @@
 #import <React/RCTEventDispatcher.h>
 #import <React/RCTLog.h>
 
-#define UPDATERATEHZ 30
+#define UPDATERATEHZ 25
 #define DEGTORAD 0.017453292
 #define RADTODEG 57.29577951
-#define MOTIONTRIGGER 0.25
-#define HEADINGTRIGGER 0.5
+#define PITCHTRIGGER 0.5
+#define ROLLTRIGGER 0.5
+#define YAWTRIGGER 1.0
 
 @implementation RNAttitude
 
@@ -28,20 +29,17 @@ RCT_EXPORT_MODULE();
 - (id)init {
     self = [super init];
     if (self) {
-        // configure default values
-        hasAttitudeListeners = false;
-        hasHeadingListeners = false;
-        lastHeadingSent = FLT_MAX;
-        lastRollSent = FLT_MAX;
-        lastPitchSent = FLT_MAX;
         inverseReferenceInUse = false;
-        refPitch = 0;
-        refRoll = 0;
+        intervalMillis = (int)(1000 / UPDATERATEHZ);
+        lastHeading = 0;
+        lastRoll = 0;
+        lastPitch = 0;
+        lastSampleTime = 0;
         
         // Allocate and initialize the motion manager.
         motionManager = [[CMMotionManager alloc] init];
         [motionManager setShowsDeviceMovementDisplay:YES];
-        [motionManager setDeviceMotionUpdateInterval:1.0/UPDATERATEHZ];
+        [motionManager setDeviceMotionUpdateInterval:intervalMillis * 0.001];
        
         // Allocate and initialize the operation queue for attitude updates.
         attitudeQueue = [[NSOperationQueue alloc] init];
@@ -56,107 +54,19 @@ RCT_EXPORT_MODULE();
     return NO;
 }
 
-#pragma mark - React event emitter
-
-// the supported events that the Javascript side can subscribe to
 - (NSArray<NSString *> *)supportedEvents
 {
-    return @[@"attitudeDidChange"];
+    return @[@"attitudeUpdate"];
 }
 
-#pragma mark - React bridge methods
-
-
-// Called when we have a new attitude listener
-RCT_EXPORT_METHOD(startObserving) {
-    // the attitude update handler
-    CMDeviceMotionHandler attitudeHandler = ^(CMDeviceMotion * _Nullable motion, NSError * _Nullable error)
-    {
-        // get the current device orientation
-        UIDeviceOrientation orientation = [[UIDevice currentDevice] orientation];
-        
-        // setup the 'default' heading and roll adjustment for portrait orientation
-        int headingAdjustment = 0;
-        int rollAdjustment = 0;
-        
-        // adjust if we are holding the device in either of the landscape orientations
-        if(orientation == UIInterfaceOrientationLandscapeLeft) {
-            headingAdjustment = -90;
-            rollAdjustment = -90;
-        }
-        else if(orientation == UIInterfaceOrientationLandscapeRight) {
-            headingAdjustment = 90;
-            rollAdjustment = 90;
-        }
-        
-        // Get the core IOS device motion quaternion and heading values (requires iOS 11 or above)
-        CMQuaternion q = [[motion attitude] quaternion];
-        double heading = 0;
-        if (@available(iOS 11.0, *)) {
-            heading = [motion heading];
-        }
-        
-        // Create a quaternion representing an adjustment of 90 degrees to the core IOS
-        // reference frame. This moves it from the reference being sitting flat on
-        // the table to a frame where the user is holding looking 'through' the screen.
-        quaternion = quaternionMultiply(q, getWorldTransformationQuaternion());
-        
-        // If we are using a pitch/roll reference 'offset' then apply the required transformation here.
-        // This is doing the same as the built-in multiplyByInverseOfAttitude.
-        if(inverseReferenceInUse) {
-            CMQuaternion qRef = quaternionMultiply(inverseReferenceQuaternion, quaternion);
-            computeEulerAnglesFromQuaternion(qRef, &roll, &pitch, &yaw);
-        }
-        else {
-            computeEulerAnglesFromQuaternion(quaternion, &roll, &pitch, &yaw);
-        }
-        
-        //RCTLogInfo(@"RNAttitude heading = %d, %d", (int)heading, headingAdjustment);
-        
-        // adjust roll and heading for orientation
-        if(headingAdjustment != 0) {
-            heading = normalizeRange(heading + headingAdjustment, 1, 360);
-        }
-        
-        if(rollAdjustment != 0) {
-            roll = normalizeRange(roll + rollAdjustment, -180, 180);
-        }
-        
-        // Send change events to the Javascript side
-        // To avoid flooding the bridge, we only send if we have listeners, and the data has significantly changed
-        
-        if((lastRollSent == FLT_MAX || (roll > (lastRollSent + MOTIONTRIGGER) || roll < (lastRollSent - MOTIONTRIGGER))) ||
-            (lastPitchSent == FLT_MAX || (pitch > (lastPitchSent + MOTIONTRIGGER) || pitch < (lastPitchSent - MOTIONTRIGGER))) ||
-            (lastHeadingSent == FLT_MAX || (heading > (lastHeadingSent + HEADINGTRIGGER) || heading < (lastHeadingSent - HEADINGTRIGGER)))) {
-            [self sendEventWithName:@"attitudeDidChange"
-                body:@{
-                    @"roll" : @(roll),
-                    @"pitch": @(pitch),
-                    @"heading": @(heading),
-                }
-            ];
-            lastRollSent = roll;
-            lastPitchSent = pitch;
-            lastHeadingSent = heading;
-        }
-    };
-    
-    if(!motionManager.isDeviceMotionActive) {
-        [motionManager startDeviceMotionUpdatesUsingReferenceFrame:CMAttitudeReferenceFrameXMagneticNorthZVertical toQueue:attitudeQueue withHandler:attitudeHandler];
-        RCTLogInfo(@"RNAttitude has started DeviceMotion updates");
-    }
+// Determines if this device is capable of providing attitude updates - defaults to yes on IOS
+RCT_REMAP_METHOD(isSupported,
+                 resolver:(RCTPromiseResolveBlock)resolve
+                 rejecter:(RCTPromiseRejectBlock)reject) {
+    return resolve(@YES);
 }
 
-// Called when this module's last listener is removed, or on dealloc.
-RCT_EXPORT_METHOD(stopObserving) {
-     [motionManager stopDeviceMotionUpdates];
-     lastHeadingSent = FLT_MAX;
-     lastRollSent = FLT_MAX;
-     lastPitchSent = FLT_MAX;
-     RCTLogInfo(@"RNAttitude has stopped all attitude and heading updates");
-}
-
-// Called to zero the current roll and pitch values as the reference attitude
+// Zeros the current roll and pitch values as the reference attitude
 RCT_EXPORT_METHOD(zero)
 {
     inverseReferenceQuaternion.w = quaternion.w;
@@ -164,14 +74,99 @@ RCT_EXPORT_METHOD(zero)
     inverseReferenceQuaternion.y = -quaternion.y;
     inverseReferenceQuaternion.z = -quaternion.z;
     inverseReferenceInUse = true;
-    RCTLogInfo(@"RNAttitude is taking a new reference attitude");
 }
 
-// Called to reset any in use reference attitudes and start using the baseline attitude reference
+// Resets any in use reference attitudes and start using the baseline attitude reference
 RCT_EXPORT_METHOD(reset)
 {
     inverseReferenceInUse = false;
-    RCTLogInfo(@"RNAttitude reference attitude reset to default");
+}
+
+// Sets the interval between event samples
+RCT_EXPORT_METHOD(setInterval:(NSInteger)interval)
+{
+    intervalMillis = interval;
+    [motionManager setDeviceMotionUpdateInterval:intervalMillis * 0.001];
+}
+
+// Starts observing pitch and roll
+RCT_EXPORT_METHOD(startObserving) {
+    if(!motionManager.isDeviceMotionActive) {
+        // the attitude update handler
+        CMDeviceMotionHandler attitudeHandler = ^(CMDeviceMotion * _Nullable motion, NSError * _Nullable error)
+        {
+            long long tempMs = (long long)([[NSDate date] timeIntervalSince1970] * 1000.0);
+            long long timeSinceLastUpdate = (tempMs - lastSampleTime);
+            if(timeSinceLastUpdate >= intervalMillis){
+                // get the current device orientation
+                UIDeviceOrientation orientation = [[UIDevice currentDevice] orientation];
+                // setup the 'default' heading and roll adjustment for portrait orientation
+                int headingAdjustment = 0;
+                int rollAdjustment = 0;
+                // adjust if we are holding the device in either of the landscape orientations
+                if(orientation == UIInterfaceOrientationLandscapeLeft) {
+                    headingAdjustment = -90;
+                    rollAdjustment = -90;
+                }
+                else if(orientation == UIInterfaceOrientationLandscapeRight) {
+                    headingAdjustment = 90;
+                    rollAdjustment = 90;
+                }
+                // Get the core IOS device motion quaternion and heading values (requires iOS 11 or above)
+                CMQuaternion q = [[motion attitude] quaternion];
+                double heading = 0;
+                if (@available(iOS 11.0, *)) {
+                    heading = [motion heading];
+                }
+                // Create a quaternion representing an adjustment of 90 degrees to the core IOS
+                // reference frame. This moves it from the reference being sitting flat on
+                // the table to a frame where the user is holding looking 'through' the screen.
+                quaternion = quaternionMultiply(q, getWorldTransformationQuaternion());
+                // If we are using a pitch/roll reference 'offset' then apply the required transformation here.
+                // This is doing the same as the built-in multiplyByInverseOfAttitude.
+                if(inverseReferenceInUse) {
+                    CMQuaternion qRef = quaternionMultiply(inverseReferenceQuaternion, quaternion);
+                    computeEulerAnglesFromQuaternion(qRef, &roll, &pitch, &yaw);
+                }
+                else {
+                    computeEulerAnglesFromQuaternion(quaternion, &roll, &pitch, &yaw);
+                }
+                // adjust roll and heading for orientation
+                if(headingAdjustment != 0) {
+                    heading = normalizeRange(heading + headingAdjustment, 1, 360);
+                }
+                if(rollAdjustment != 0) {
+                    roll = normalizeRange(roll + rollAdjustment, -180, 180);
+                }
+                // Send change events to the Javascript side via the React Native bridge
+                // To avoid flooding the bridge, we only send if the values have changed
+                if ((pitch > (lastPitch + PITCHTRIGGER)) || (pitch < (lastPitch - PITCHTRIGGER)) ||
+                     (roll > (lastRoll + ROLLTRIGGER)) || (roll < (lastRoll - ROLLTRIGGER)) ||
+                     (heading > (lastHeading + YAWTRIGGER)) || (heading < (lastHeading - YAWTRIGGER))) {
+                    [self sendEventWithName:@"attitudeUpdate"
+                        body:@{
+                            @"timestamp" : @(tempMs),
+                            @"roll" : @(roll),
+                            @"pitch": @(pitch),
+                            @"heading": @(heading),
+                        }
+                    ];
+                    lastRoll = roll;
+                    lastPitch = pitch;
+                    lastHeading = heading;
+                }
+                lastSampleTime = tempMs;
+            }
+        };
+        
+        [motionManager startDeviceMotionUpdatesUsingReferenceFrame:CMAttitudeReferenceFrameXMagneticNorthZVertical toQueue:attitudeQueue withHandler:attitudeHandler];
+    }
+}
+
+// Stops observing pitch and roll
+RCT_EXPORT_METHOD(stopObserving) {
+    [motionManager stopDeviceMotionUpdates];
+    lastSampleTime = lastHeading = lastRoll = lastPitch = 0;
 }
 
 #pragma mark - Private methods

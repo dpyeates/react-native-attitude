@@ -8,18 +8,17 @@
     // speed in metres per second
     // altitude in metres
     // pressure in millibars
-    bool hasAttitudeListeners;
-    bool hasHeadingListeners;
     bool inverseReferenceInUse;
+    bool observing;
+    long long lastSampleTime;
+    int intervalMillis;
     float roll;
     float pitch;
     float yaw;
     float heading;
-    float refPitch;
-    float refRoll;
-    float lastHeadingSent;
-    float lastRollSent;
-    float lastPitchSent;
+    float lastHeading;
+    float lastRoll;
+    float lastPitch;
     CMQuaternion quaternion;
     CMQuaternion inverseReferenceQuaternion;
     CMMotionManager *motionManager;

@@ -1,65 +1,65 @@
 package com.sensorworks.RNAttitude;
 
-import android.app.Activity;
-import android.content.Context;
-import android.content.Intent;
+// FYI, nice article here: http://plaw.info/articles/sensorfusion/
+
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorManager;
 import android.hardware.SensorEventListener;
-
 import androidx.annotation.Nullable;
-
-import android.util.Log;
 import android.view.WindowManager;
 import android.view.Surface;
+import android.util.Log;
 
 import com.facebook.react.bridge.ActivityEventListener;
-import com.facebook.react.bridge.Arguments;
+import com.facebook.react.bridge.LifecycleEventListener;
 import com.facebook.react.bridge.BaseActivityEventListener;
-import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
+import com.facebook.react.bridge.Promise;
+import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.ReactMethod;
 import com.facebook.react.bridge.ReadableMap;
 import com.facebook.react.bridge.WritableMap;
+import com.facebook.react.bridge.Callback;
 import com.facebook.react.module.annotations.ReactModule;
 import com.facebook.react.modules.core.DeviceEventManagerModule;
 import com.facebook.react.modules.core.RCTNativeAppEventEmitter;
 
 @ReactModule(name = RNAttitudeModule.NAME)
-public class RNAttitudeModule extends ReactContextBaseJavaModule implements SensorEventListener {
+public class RNAttitudeModule extends ReactContextBaseJavaModule implements LifecycleEventListener, SensorEventListener {
   public static final String NAME = "RNAttitude";
-  private static final int SENSOR_DELAY_MICROS = 16 * 1000; // 16ms
-  private static final float MOTIONTRIGGER = 0.25f;
-  private static final float HEADINGTRIGGER = 0.5f;
+  private static final float PITCHTRIGGER = 0.5f;
+  private static final float ROLLTRIGGER = 0.5f;
+  private static final float YAWTRIGGER = 1.0f;
+  private static final byte ROLL = 2;
+  private static final byte PITCH = 1;
+  private static final byte YAW = 0;
 
-  private final SensorManager mSensorManager;
+  private final ReactApplicationContext mReactContext;
+
   @Nullable
-  private final Sensor mRotationSensor;
-
- // private final WindowManager mWindowManager;
-
-  private final ReactApplicationContext reactContext;
-
-
-  private double lastRollSent = Double.MAX_VALUE;
-  private double lastPitchSent = Double.MAX_VALUE;
-  private double lastYawSent = Double.MAX_VALUE;
-
-  private int mLastAccuracy;
-
-  private float[] referenceQuaternion = new float[4];
-
-  private boolean inverseReferenceInUse = false;
-  private float[] inverseReferenceQuaternion = new float[4];
+  private Sensor mRotationSensor;
+  private SensorManager mSensorManager;
+  private WindowManager mWindowManager = null;
+  private boolean mInverseReferenceInUse = false;
+  private boolean mObserving = false;
+  private int mIntervalMillis = 40;
+  private long mLastSampleTime;
+  private float[] mRotationMatrix = new float[9];
+  private float[] mRemappedRotationMatrix = new float[9];
+  private float[] mAngles = new float[3];
+  private double mLastRoll = 0;
+  private double mLastPitch = 0;
+  private double mLastYaw = 0;
 
   public RNAttitudeModule(ReactApplicationContext reactContext) {
     super(reactContext);
-    this.reactContext = reactContext;
-   // this.mWindowManager = getCurrentActivity().getWindow().getWindowManager();
-    this.mSensorManager = (SensorManager) reactContext.getSystemService(reactContext.SENSOR_SERVICE);
-    this.mRotationSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
+    this.mReactContext = reactContext;
+    this.mReactContext.addLifecycleEventListener(this);
+    mSensorManager = (SensorManager) reactContext.getSystemService(reactContext.SENSOR_SERVICE);
+    // mRotationSensor is set to null if the sensor hardware is not available on the device
+    mRotationSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
   }
 
   @Override
@@ -67,64 +67,83 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Sens
     return NAME;
   }
 
+  //------------------------------------------------------------------------------------------------
   // React interface
 
   @ReactMethod
-  public void startObserving() {
-    mSensorManager.registerListener(this, mRotationSensor, SENSOR_DELAY_MICROS);
-    Log.i(RNAttitudeModule.NAME, "RNAttitude has started updates");
+  // Sets the interval between event samples
+  public void setInterval(int interval) {
+    mIntervalMillis = interval;
   }
 
   @ReactMethod
-  public void stopObserving() {
-    mSensorManager.unregisterListener(this);
-    Log.i(RNAttitudeModule.NAME, "RNAttitude has stopped updates");
-    lastPitchSent = lastRollSent = lastYawSent = Double.MAX_VALUE;
+  // Determines if this device is capable of providing attitude updates - defaults to yes on IOS
+  public void isSupported(Promise promise) {
+    promise.resolve(mRotationSensor != null);
   }
 
   @ReactMethod
+  // Zeros the current roll and pitch values as the reference attitude
   public void zero() {
-    inverseReferenceQuaternion[3] = referenceQuaternion[3];
-    inverseReferenceQuaternion[0] = -referenceQuaternion[0];
-    inverseReferenceQuaternion[1] = -referenceQuaternion[1];
-    inverseReferenceQuaternion[2] = -referenceQuaternion[2];
-    inverseReferenceInUse = true;
+    //inverseReferenceQuaternion[3] = referenceQuaternion[3];
+    //inverseReferenceQuaternion[0] = -referenceQuaternion[0];
+    //inverseReferenceQuaternion[1] = -referenceQuaternion[1];
+    //inverseReferenceQuaternion[2] = -referenceQuaternion[2];
+    mInverseReferenceInUse = true;
     Log.i(RNAttitudeModule.NAME, "RNAttitude is taking a new reference attitude");
   }
 
   @ReactMethod
+  // Resets any in use reference attitudes and start using the baseline attitude reference
   public void reset() {
-    inverseReferenceInUse = true;
+    mInverseReferenceInUse = false;
     Log.i(RNAttitudeModule.NAME, "RNAttitude reference attitude reset to default");
   }
 
+  @ReactMethod
+  // Starts observing pitch and roll
+  public void startObserving(Promise promise) {
+    if (mRotationSensor == null) {
+      promise.reject("-1",
+          "Rotation vector sensor not available; will not provide orientation data.");
+      return;
+    }
+    mSensorManager.registerListener(this, mRotationSensor, mIntervalMillis * 1000);
+    mObserving = true;
+    promise.resolve(mIntervalMillis);
+  }
+
+  @ReactMethod
+  // Stops observing pitch and roll
+  public void stopObserving() {
+    mSensorManager.unregisterListener(this);
+    mObserving = false;
+    mLastPitch = mLastRoll = mLastYaw = 0;
+  }
+
+  //------------------------------------------------------------------------------------------------
   // Internal methods
 
   @Override
   public void onSensorChanged(SensorEvent sensorEvent) {
-    if (mLastAccuracy == SensorManager.SENSOR_STATUS_UNRELIABLE) {
-      return;
-    }
-    if (sensorEvent.sensor.getType() == Sensor.TYPE_ROTATION_VECTOR) {
-
-      referenceQuaternion = sensorEvent.values.clone();
-      float[] rotationMatrix = new float[9];
-
-      // If we are using a pitch/roll reference 'offset' then apply the required transformation here.
-      // This is doing the same as the built-in multiplyByInverseOfAttitude.
-      if(inverseReferenceInUse) {
-        SensorManager.getRotationMatrixFromVector(rotationMatrix, quaternionMultiply(inverseReferenceQuaternion, referenceQuaternion));
-      }
-      else {
-        SensorManager.getRotationMatrixFromVector(rotationMatrix, referenceQuaternion);
-      }
-
+    long tempMs = System.currentTimeMillis();
+    long timeSinceLastUpdate = tempMs - mLastSampleTime;
+    if (timeSinceLastUpdate >= mIntervalMillis) {
       final int worldAxisForDeviceAxisX;
       final int worldAxisForDeviceAxisY;
 
-      // Remap the axes as if the device screen was the instrument panel,
-      // and adjust the rotation matrix for the device orientation.
-      switch (getCurrentActivity().getWindow().getWindowManager().getDefaultDisplay().getRotation()) {
+      Log.i(RNAttitudeModule.NAME, "UPDATE");
+
+      // convert latest values from rotation vectors into matrix
+      SensorManager.getRotationMatrixFromVector(mRotationMatrix, sensorEvent.values);
+
+      if (mWindowManager == null) {
+        mWindowManager = getCurrentActivity().getWindow().getWindowManager();
+      }
+
+      // remap the axes as if the device screen was the instrument panel,
+      // by adjusting the rotation matrix for the device/screen orientation.
+      switch (mWindowManager.getDefaultDisplay().getRotation()) {
         case Surface.ROTATION_0:
         default:
           worldAxisForDeviceAxisX = SensorManager.AXIS_X;
@@ -143,62 +162,67 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Sens
           worldAxisForDeviceAxisY = SensorManager.AXIS_X;
           break;
       }
-
-      float[] adjustedRotationMatrix = new float[9];
-      SensorManager.remapCoordinateSystem(rotationMatrix, worldAxisForDeviceAxisX,
-          worldAxisForDeviceAxisY, adjustedRotationMatrix);
+      SensorManager.remapCoordinateSystem(mRotationMatrix, worldAxisForDeviceAxisX,
+          worldAxisForDeviceAxisY, mRemappedRotationMatrix);
 
       // Transform rotation matrix into azimuth/pitch/roll
-      float[] orientation = new float[3];
-      SensorManager.getOrientation(adjustedRotationMatrix, orientation);
+      SensorManager.getOrientation(mRemappedRotationMatrix, mAngles);
 
-      double pitch = Math.toDegrees(orientation[0]);
-      double roll = Math.toDegrees(orientation[1]);
-      double yaw = Math.toDegrees(orientation[2]);
+      // Convert radians to degrees, inverse correction needed for pitch to make 'up' positive
+      double pitch = -Math.toDegrees(mAngles[PITCH]);
+      double roll = Math.toDegrees(mAngles[ROLL]);
+      double yaw = Math.toDegrees(mAngles[YAW]);
 
-      // Send change events to the Javascript side
-      // To avoid flooding the bridge, we only send if data has significantly changed
-      if ((lastRollSent == Double.MAX_VALUE || (roll > (lastRollSent + MOTIONTRIGGER) || roll < (lastRollSent - MOTIONTRIGGER))) ||
-          (lastPitchSent == Double.MAX_VALUE || (pitch > (lastPitchSent + MOTIONTRIGGER) || pitch < (lastPitchSent - MOTIONTRIGGER))) ||
-          (lastYawSent == Double.MAX_VALUE || (yaw > (lastYawSent + HEADINGTRIGGER) || yaw < (lastYawSent - HEADINGTRIGGER)))) {
+      // convert -180<-->180 yaw values to 0-->360
+      yaw = yaw < 0 ? yaw + 360 : yaw;
+
+      // Send change events to the Javascript side via the React Native bridge
+      // To avoid flooding the bridge, we only send if the values have changed
+      if ((pitch > (mLastPitch + PITCHTRIGGER)) || (pitch < (mLastPitch - PITCHTRIGGER)) ||
+          (roll > (mLastRoll + ROLLTRIGGER)) || (roll < (mLastRoll - ROLLTRIGGER)) ||
+          (yaw > (mLastYaw + YAWTRIGGER)) || (yaw < (mLastYaw - YAWTRIGGER))) {
         WritableMap map = Arguments.createMap();
+        map.putDouble("timestamp", tempMs);
         map.putDouble("roll", roll);
         map.putDouble("pitch", pitch);
         map.putDouble("heading", yaw);
-        sendEvent("attitudeDidChange", map);
-        lastRollSent = roll;
-        lastPitchSent = pitch;
-        lastYawSent = yaw;
+        try {
+          mReactContext.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+              .emit("attitudeDidChange", map);
+        } catch (RuntimeException e) {
+          Log.e("ERROR", "Error sending event over the React bridge");
+        }
+
+        Log.i(RNAttitudeModule.NAME, "roll = " + roll + ", pitch = " + pitch + ", yaw = " + yaw);
+
+        mLastPitch = pitch;
+        mLastRoll = roll;
+        mLastYaw = yaw;
+        mLastSampleTime = tempMs;
       }
     }
   }
 
   @Override
   public void onAccuracyChanged(Sensor sensor, int accuracy) {
-    if (mLastAccuracy != accuracy) {
-      mLastAccuracy = accuracy;
+  }
+
+  @Override
+  public void onHostResume() {
+    if(mObserving) {
+      mSensorManager.registerListener(this, mRotationSensor, mIntervalMillis * 1000);
     }
   }
 
-  private void sendEvent(String eventName, @Nullable WritableMap params) {
-    try {
-      this.reactContext.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
-          .emit(eventName, params);
-    } catch (RuntimeException e) {
-      Log.e("ERROR", "java.lang.RuntimeException: Trying to invoke Javascript before CatalystInstance has been set!");
+  @Override
+  public void onHostPause() {
+    if(mObserving) {
+      mSensorManager.unregisterListener(this);
     }
   }
 
-  private float[] quaternionMultiply(float[] a, float[] b) {
-    float[] q = new float[4];
-    int w = 3;
-    int x = 0;
-    int y = 1;
-    int z = 2;
-    q[w] = a[w] * b[w] - a[x] * b[x] - a[y] * b[y] - a[z] * b[z];
-    q[x] = a[x] * b[w] + a[w] * b[x] + a[y] * b[z] - a[z] * b[y];
-    q[y] = a[y] * b[w] + a[w] * b[y] + a[z] * b[x] - a[x] * b[z];
-    q[z] = a[z] * b[w] + a[w] * b[z] + a[x] * b[y] - a[y] * b[x];
-    return q;
+  @Override
+  public void onHostDestroy() {
+    stopObserving();
   }
 }

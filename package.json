@@ -1,14 +1,16 @@
 {
   "name": "react-native-attitude",
-  "version": "1.0.10",
-  "description": "Obtain device attitude (roll, pitch, heading), and altitude",
+  "title": "React Native Attitude",
+  "version": "1.0.11",
+  "description": "Obtain device attitude (roll, pitch and heading)",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/dpyeates/react-native-attitude.git"
+    "url": "https://github.com/dpyeates/react-native-attitude.git",
+    "baseUrl": "https://github.com/dpyeates/react-native-attitude"
   },
   "keywords": [
     "react-native",
@@ -18,13 +20,22 @@
     "heading",
     "ahrs"
   ],
-  "author": "",
-  "license": "",
+  "author": {
+    "name": "Darren Yeates",
+    "email": "apps@sensorworks.co.uk"
+  },
   "bugs": {
     "url": "https://github.com/dpyeates/react-native-attitude/issues"
   },
+  "license": "MIT",
+  "licenseFilename": "LICENSE",
+  "readmeFilename": "README.md",
   "peerDependencies": {
-    "react-native": ">=0.57.0"
+    "react": "^16.8.1",
+    "react-native": ">=0.59.0-rc.0 <1.0.x"
   },
-  "dependencies": {}
+  "devDependencies": {
+    "react": "^16.8.3",
+    "react-native": "^0.59.10"
+  }
 }

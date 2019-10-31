@@ -1,8 +1,8 @@
-
+  
 # react-native-attitude
 
-Provides Attitude (Roll, Pitch & Heading) in degrees for iOS. (Android in progress - not stable)
-
+Provides Attitude (Roll, Pitch & Heading) in degrees for iOS and Android.
+  
 ## Getting started
 
 `yarn add react-native-attitude`
@@ -20,7 +20,7 @@ or
 <details>
 <summary>Manually link the library on iOS</summary>
 
-### `Open project.xcodeproj in Xcode`
+### `Open RNAttitude.xcodeproj in Xcode`
 
 Drag `RNAttitude.xcodeproj` to your project on Xcode (usually under the Libraries group on Xcode):
 
@@ -39,84 +39,209 @@ Update your `Podfile`
 ```
 pod 'react-native-attitude', path: '../node_modules/react-native-attitude'
 ```
-
 </details>
 
 <details>
+
 <summary>Manually link the library on Android</summary>
 
 #### `android/settings.gradle`
+
 ```groovy
+
 include ':react-native-attitude'
+
 project(':react-native-attitude').projectDir = new File(rootProject.projectDir, '../node_modules/react-native-attitude/android')
+
 ```
 
 #### `android/app/build.gradle`
+
 ```groovy
+
 dependencies {
-   ...
-   implementation project(':react-native-community-geolocation')
+...
+implementation project(':react-native-attitude')
 }
+
 ```
 
 #### `android/app/src/main/.../MainApplication.java`
+
 On top, where imports are:
 
 ```java
+
 import com.sensorworks.RNAttitudePackage;
+
 ```
 
-Add the `GeolocationPackage` class to your list of exported packages.
+Add the `RNAttitudePackage` class to your list of exported packages.
 
 ```java
+
 @Override
 protected List<ReactPackage> getPackages() {
-    return Arrays.asList(
-            new MainReactPackage(),
-            new RNAttitudePackage()
-    );
+  return Arrays.asList(
+    new MainReactPackage(),
+    new RNAttitudePackage()
+  );
 }
+
 ```
 </details>
 
-Since **react-native 0.60** and higher, [autolinking](https://github.com/react-native-community/cli/blob/master/docs/autolinking.md) makes the installation process simpler
+Since ****react-native 0.60**** and higher, [autolinking](https://github.com/react-native-community/cli/blob/master/docs/autolinking.md) makes the installation process simpler
 
 ## Usage
+
+### Example
+ 
 ```javascript
-import {Attitude, Barometer} from 'react-native-attitude';
+
+import Attitude from 'react-native-attitude';
+
+Attitude.watch((payload => {});
+
 ```
 
-### Attitude (Pitch, Roll and Heading in degrees)
-```js
-attitudeWatchID = Attitude.watch((update) => {
-    /**
-     * update.roll (in degrees -180 (left) +180 (right))
-     * update.pitch (in degrees  -90 (down) +90 (up))
-     * update.heading (in degrees 0-360 referenced to magnetic north)
-    **/
-    });
+## Methods
+
+### Summary
+
+*  [`isSupported`](#issupported)
+
+*  [`setInterval`](#setinterval)
+
+*  [`zero`](#zero)
+
+*  [`reset`](#reset)
+
+*  [`watch`](#watch)
+
+*  [`clearWatch`](#clearwatch)
+
+*  [`stopObserving`](#stopobserving)
+
+---
+
+### Details
+
+#### `isSupported()`
+
+Before using, check to see if attitude updates are supported on the device.
+
+```javascript
+
+const isSupported = Attitude.isSupported();
+
 ```
-```js
-Attitude.clearWatch(attitudeWatchID);
+---
+
+#### `setInterval()`
+
+Optionally request an update interval in ms. The default update rate is (approx) 40ms, i.e. 25Hz.
+
+```javascript
+
+// request updates once every second
+
+Attitude.setInterval(1000);
+
 ```
-```js
+---
+
+#### `zero()`
+
+Levels pitch and roll according to the current attitude. This can be used to null the device if it is oriented away from level.
+
+```javascript
+
+// level both pitch and roll 
+
+Attitude.zero();
+
+```
+---
+
+#### `reset()`
+
+Resets any previous calls to `zero()`.
+
+```javascript
+
+Attitude.reset();
+
+```
+---
+
+#### `watch()`
+
+```javascript
+
+Attitude.watch(success);
+
+```
+Invokes the success callback whenever the attitude changes. 
+The payload delivered via the callback is defined in the example below.
+
+Returns a `watchId` (number).
+
+****Parameters:****
+
+| Name  | Type | Required | Description |
+| ------- | -------- | -------- | ----------------------------------------- |
+| success | function | Yes  | Invoked at a default interval of 25hz This can be changed by using the setInterval method.  |
+
+****Example:****
+
+```javascript
+
+const watchId = Attitude.watch((payload) =>{
+
+/*
+
+payload.timestamp - sample time in ms referenced to January 1, 1970 UTC
+
+payload.roll - roll in degrees -180<-->180
+
+payload.pitch - pitch in degrees -90<-->90
+
+payload.heading - heading in degrees 0-->360
+
+*/
+
+);
+
+```
+---
+
+#### `clearWatch()`
+
+```javascript
+
+Attitude.clearWatch(watchID);
+
+```
+
+****Parameters:****
+
+| Name  | Type | Required | Description  |
+| ------- | ------ | -------- | ------------------------------------ |
+| watchID | number | Yes  | Id as returned by `watch()`. |
+---
+
+#### `stopObserving()`
+
+```javascript
+
 Attitude.stopObserving();
+
 ```
 
-### Barometer/Altitude
-```js
-altitudeWatchID = Barometer.watch((update) => {
-    /**
-     * update.timeSinceLastUpdate (in seconds)
-     * update.relativeAltitude (+/- deviation in m since the start of watch - will be 0 on start)
-     * update.verticalSpeed (in metres per minute)
-     * update.pressure (current air pressure in millibars)
-    **/
-    });
-```
-```js
-Barometer.clearWatch(altitudeWatchID);
-```
-```js
-Barometer.stopObserving();
-```
+Stops observing for all attitude updates.
+
+In addition, it removes all listeners previously registered.
+
+Note that this method does nothing if the `Attitude.watch(successCallback)` method has not previously been called.
+
