@@ -16,7 +16,7 @@ const Attitude = {
       attitudeUpdatesEnabled = true;
     }
     const watchID = attitudeSubscriptions.length;
-    attitudeSubscriptions.push(AttitudeEventEmitter.addListener('attitudeDidChange', success));
+    attitudeSubscriptions.push(AttitudeEventEmitter.addListener('attitudeUpdate', success));
     return watchID;
   },
 
@@ -74,10 +74,6 @@ const Attitude = {
   // Sets the interval between event samples
   setInterval: function(interval) {
     RNAttitude.setInterval(interval);
-    if(attitudeUpdatesEnabled) {
-      RNAttitude.stopObserving();
-      RNAttitude.startObserving();
-    }
   }
   
 };

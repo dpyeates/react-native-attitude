@@ -85,7 +85,7 @@ RCT_EXPORT_METHOD(reset)
 // Sets the interval between event samples
 RCT_EXPORT_METHOD(setInterval:(NSInteger)interval)
 {
-    intervalMillis = interval;
+    self->intervalMillis = interval;
     [motionManager setDeviceMotionUpdateInterval:intervalMillis * 0.001];
 }
 
@@ -96,8 +96,8 @@ RCT_EXPORT_METHOD(startObserving) {
         CMDeviceMotionHandler attitudeHandler = ^(CMDeviceMotion * _Nullable motion, NSError * _Nullable error)
         {
             long long tempMs = (long long)([[NSDate date] timeIntervalSince1970] * 1000.0);
-            long long timeSinceLastUpdate = (tempMs - lastSampleTime);
-            if(timeSinceLastUpdate >= intervalMillis){
+            long long timeSinceLastUpdate = (tempMs - self->lastSampleTime);
+            if(timeSinceLastUpdate >= self->intervalMillis){
                 // get the current device orientation
                 UIDeviceOrientation orientation = [[UIDevice currentDevice] orientation];
                 // setup the 'default' heading and roll adjustment for portrait orientation
@@ -121,41 +121,41 @@ RCT_EXPORT_METHOD(startObserving) {
                 // Create a quaternion representing an adjustment of 90 degrees to the core IOS
                 // reference frame. This moves it from the reference being sitting flat on
                 // the table to a frame where the user is holding looking 'through' the screen.
-                quaternion = quaternionMultiply(q, getWorldTransformationQuaternion());
+                self->quaternion = quaternionMultiply(q, getWorldTransformationQuaternion());
                 // If we are using a pitch/roll reference 'offset' then apply the required transformation here.
                 // This is doing the same as the built-in multiplyByInverseOfAttitude.
-                if(inverseReferenceInUse) {
-                    CMQuaternion qRef = quaternionMultiply(inverseReferenceQuaternion, quaternion);
-                    computeEulerAnglesFromQuaternion(qRef, &roll, &pitch, &yaw);
+                if(self->inverseReferenceInUse) {
+                    CMQuaternion qRef = quaternionMultiply(self->inverseReferenceQuaternion, self->quaternion);
+                    computeEulerAnglesFromQuaternion(qRef, &self->roll, &self->pitch, &self->yaw);
                 }
                 else {
-                    computeEulerAnglesFromQuaternion(quaternion, &roll, &pitch, &yaw);
+                    computeEulerAnglesFromQuaternion(self->quaternion, &self->roll, &self->pitch, &self->yaw);
                 }
                 // adjust roll and heading for orientation
                 if(headingAdjustment != 0) {
                     heading = normalizeRange(heading + headingAdjustment, 1, 360);
                 }
                 if(rollAdjustment != 0) {
-                    roll = normalizeRange(roll + rollAdjustment, -180, 180);
+                    self->roll = normalizeRange(self->roll + rollAdjustment, -180, 180);
                 }
                 // Send change events to the Javascript side via the React Native bridge
                 // To avoid flooding the bridge, we only send if the values have changed
-                if ((pitch > (lastPitch + PITCHTRIGGER)) || (pitch < (lastPitch - PITCHTRIGGER)) ||
-                     (roll > (lastRoll + ROLLTRIGGER)) || (roll < (lastRoll - ROLLTRIGGER)) ||
-                     (heading > (lastHeading + YAWTRIGGER)) || (heading < (lastHeading - YAWTRIGGER))) {
+                if ((self->pitch > (self->lastPitch + PITCHTRIGGER)) || (self->pitch < (self->lastPitch - PITCHTRIGGER)) ||
+                     (self->roll > (self->lastRoll + ROLLTRIGGER)) || (self->roll < (self->lastRoll - ROLLTRIGGER)) ||
+                     (heading > (self->lastHeading + YAWTRIGGER)) || (heading < (self->lastHeading - YAWTRIGGER))) {
                     [self sendEventWithName:@"attitudeUpdate"
                         body:@{
                             @"timestamp" : @(tempMs),
-                            @"roll" : @(roll),
-                            @"pitch": @(pitch),
+                            @"roll" : @(self->roll),
+                            @"pitch": @(self->pitch),
                             @"heading": @(heading),
                         }
                     ];
-                    lastRoll = roll;
-                    lastPitch = pitch;
-                    lastHeading = heading;
+                    self->lastRoll = self->roll;
+                    self->lastPitch = self->pitch;
+                    self->lastHeading = heading;
                 }
-                lastSampleTime = tempMs;
+                self->lastSampleTime = tempMs;
             }
         };
         
@@ -172,8 +172,8 @@ RCT_EXPORT_METHOD(stopObserving) {
 #pragma mark - Private methods
 
 CMQuaternion getWorldTransformationQuaternion() {
-    const float worldAngle = 90 * DEGTORAD;
-    const float minusHalfAngle = -worldAngle / 2;
+    const static float worldAngle = 90 * DEGTORAD;
+    const static float minusHalfAngle = -worldAngle / 2;
     CMQuaternion q_w;
     q_w.w = cos(minusHalfAngle);
     q_w.x = sin(minusHalfAngle);

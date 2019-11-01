@@ -2,11 +2,16 @@ package com.sensorworks.RNAttitude;
 
 // FYI, nice article here: http://plaw.info/articles/sensorfusion/
 
+import java.util.Arrays;
+
+import android.os.SystemClock;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorManager;
 import android.hardware.SensorEventListener;
+
 import androidx.annotation.Nullable;
+
 import android.view.WindowManager;
 import android.view.Surface;
 import android.util.Log;
@@ -29,6 +34,7 @@ import com.facebook.react.modules.core.RCTNativeAppEventEmitter;
 @ReactModule(name = RNAttitudeModule.NAME)
 public class RNAttitudeModule extends ReactContextBaseJavaModule implements LifecycleEventListener, SensorEventListener {
   public static final String NAME = "RNAttitude";
+  private static final float NS2MS = 0.000001f;
   private static final float PITCHTRIGGER = 0.5f;
   private static final float ROLLTRIGGER = 0.5f;
   private static final float YAWTRIGGER = 1.0f;
@@ -45,10 +51,11 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
   private boolean mInverseReferenceInUse = false;
   private boolean mObserving = false;
   private int mIntervalMillis = 40;
-  private long mLastSampleTime;
+  private long mNextSampleTime = 0;
   private float[] mRotationMatrix = new float[9];
   private float[] mRemappedRotationMatrix = new float[9];
-  private float[] mAngles = new float[3];
+  private float[] mRefAngles = new float[3];
+  private float[] mInverseAngles = new float[3];
   private double mLastRoll = 0;
   private double mLastPitch = 0;
   private double mLastYaw = 0;
@@ -85,19 +92,14 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
   @ReactMethod
   // Zeros the current roll and pitch values as the reference attitude
   public void zero() {
-    //inverseReferenceQuaternion[3] = referenceQuaternion[3];
-    //inverseReferenceQuaternion[0] = -referenceQuaternion[0];
-    //inverseReferenceQuaternion[1] = -referenceQuaternion[1];
-    //inverseReferenceQuaternion[2] = -referenceQuaternion[2];
+    mInverseAngles = Arrays.copyOf(mRefAngles, 3);
     mInverseReferenceInUse = true;
-    Log.i(RNAttitudeModule.NAME, "RNAttitude is taking a new reference attitude");
   }
 
   @ReactMethod
   // Resets any in use reference attitudes and start using the baseline attitude reference
   public void reset() {
     mInverseReferenceInUse = false;
-    Log.i(RNAttitudeModule.NAME, "RNAttitude reference attitude reset to default");
   }
 
   @ReactMethod
@@ -107,6 +109,9 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
       promise.reject("-1",
           "Rotation vector sensor not available; will not provide orientation data.");
       return;
+    }
+    if (mWindowManager == null) {
+      mWindowManager = getCurrentActivity().getWindow().getWindowManager();
     }
     mSensorManager.registerListener(this, mRotationSensor, mIntervalMillis * 1000);
     mObserving = true;
@@ -118,7 +123,7 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
   public void stopObserving() {
     mSensorManager.unregisterListener(this);
     mObserving = false;
-    mLastPitch = mLastRoll = mLastYaw = 0;
+    mLastPitch = mLastRoll = mLastYaw = mNextSampleTime = 0;
   }
 
   //------------------------------------------------------------------------------------------------
@@ -126,81 +131,106 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
 
   @Override
   public void onSensorChanged(SensorEvent sensorEvent) {
-    long tempMs = System.currentTimeMillis();
-    long timeSinceLastUpdate = tempMs - mLastSampleTime;
-    if (timeSinceLastUpdate >= mIntervalMillis) {
-      final int worldAxisForDeviceAxisX;
-      final int worldAxisForDeviceAxisY;
-
-      Log.i(RNAttitudeModule.NAME, "UPDATE");
-
-      // convert latest values from rotation vectors into matrix
-      SensorManager.getRotationMatrixFromVector(mRotationMatrix, sensorEvent.values);
-
-      if (mWindowManager == null) {
-        mWindowManager = getCurrentActivity().getWindow().getWindowManager();
-      }
-
-      // remap the axes as if the device screen was the instrument panel,
-      // by adjusting the rotation matrix for the device/screen orientation.
-      switch (mWindowManager.getDefaultDisplay().getRotation()) {
-        case Surface.ROTATION_0:
-        default:
-          worldAxisForDeviceAxisX = SensorManager.AXIS_X;
-          worldAxisForDeviceAxisY = SensorManager.AXIS_Z;
-          break;
-        case Surface.ROTATION_90:
-          worldAxisForDeviceAxisX = SensorManager.AXIS_Z;
-          worldAxisForDeviceAxisY = SensorManager.AXIS_MINUS_X;
-          break;
-        case Surface.ROTATION_180:
-          worldAxisForDeviceAxisX = SensorManager.AXIS_MINUS_X;
-          worldAxisForDeviceAxisY = SensorManager.AXIS_MINUS_Z;
-          break;
-        case Surface.ROTATION_270:
-          worldAxisForDeviceAxisX = SensorManager.AXIS_MINUS_Z;
-          worldAxisForDeviceAxisY = SensorManager.AXIS_X;
-          break;
-      }
-      SensorManager.remapCoordinateSystem(mRotationMatrix, worldAxisForDeviceAxisX,
-          worldAxisForDeviceAxisY, mRemappedRotationMatrix);
-
-      // Transform rotation matrix into azimuth/pitch/roll
-      SensorManager.getOrientation(mRemappedRotationMatrix, mAngles);
-
-      // Convert radians to degrees, inverse correction needed for pitch to make 'up' positive
-      double pitch = -Math.toDegrees(mAngles[PITCH]);
-      double roll = Math.toDegrees(mAngles[ROLL]);
-      double yaw = Math.toDegrees(mAngles[YAW]);
-
-      // convert -180<-->180 yaw values to 0-->360
-      yaw = yaw < 0 ? yaw + 360 : yaw;
-
-      // Send change events to the Javascript side via the React Native bridge
-      // To avoid flooding the bridge, we only send if the values have changed
-      if ((pitch > (mLastPitch + PITCHTRIGGER)) || (pitch < (mLastPitch - PITCHTRIGGER)) ||
-          (roll > (mLastRoll + ROLLTRIGGER)) || (roll < (mLastRoll - ROLLTRIGGER)) ||
-          (yaw > (mLastYaw + YAWTRIGGER)) || (yaw < (mLastYaw - YAWTRIGGER))) {
-        WritableMap map = Arguments.createMap();
-        map.putDouble("timestamp", tempMs);
-        map.putDouble("roll", roll);
-        map.putDouble("pitch", pitch);
-        map.putDouble("heading", yaw);
-        try {
-          mReactContext.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
-              .emit("attitudeDidChange", map);
-        } catch (RuntimeException e) {
-          Log.e("ERROR", "Error sending event over the React bridge");
-        }
-
-        Log.i(RNAttitudeModule.NAME, "roll = " + roll + ", pitch = " + pitch + ", yaw = " + yaw);
-
-        mLastPitch = pitch;
-        mLastRoll = roll;
-        mLastYaw = yaw;
-        mLastSampleTime = tempMs;
-      }
+    long currentTime = SystemClock.elapsedRealtime();
+    if (currentTime < mNextSampleTime) {
+      return;
     }
+
+    SensorManager.getRotationMatrixFromVector(mRotationMatrix, getVectorFromSensorEvent(sensorEvent));
+
+    // remap the axes as if the device screen was the instrument panel,
+    // by adjusting the rotation matrix for the device/screen orientation.
+    final int worldAxisForDeviceAxisX;
+    final int worldAxisForDeviceAxisY;
+
+    switch (mWindowManager.getDefaultDisplay().getRotation()) {
+      case Surface.ROTATION_0:
+      default:
+        worldAxisForDeviceAxisX = SensorManager.AXIS_X;
+        worldAxisForDeviceAxisY = SensorManager.AXIS_Z;
+        break;
+      case Surface.ROTATION_90:
+        worldAxisForDeviceAxisX = SensorManager.AXIS_Z;
+        worldAxisForDeviceAxisY = SensorManager.AXIS_MINUS_X;
+        break;
+      case Surface.ROTATION_180:
+        worldAxisForDeviceAxisX = SensorManager.AXIS_MINUS_X;
+        worldAxisForDeviceAxisY = SensorManager.AXIS_MINUS_Z;
+        break;
+      case Surface.ROTATION_270:
+        worldAxisForDeviceAxisX = SensorManager.AXIS_MINUS_Z;
+        worldAxisForDeviceAxisY = SensorManager.AXIS_X;
+        break;
+    }
+
+    SensorManager.remapCoordinateSystem(
+        mRotationMatrix,
+        worldAxisForDeviceAxisX,
+        worldAxisForDeviceAxisY,
+        mRemappedRotationMatrix
+    );
+
+    SensorManager.getOrientation(mRemappedRotationMatrix, mRefAngles);
+
+    float[] angles;
+    if(mInverseReferenceInUse) {
+      angles = getInvertedAngles(mRefAngles, mInverseAngles);
+    }
+    else {
+      angles = Arrays.copyOf(mRefAngles, 3);
+    }
+
+    // Convert radians to degrees, inverse correction needed for pitch to make 'up' positive
+    double pitch = -Math.toDegrees(angles[PITCH]);
+    double roll = Math.toDegrees(angles[ROLL]);
+    double yaw = Math.toDegrees(angles[YAW]);
+
+    // convert -180<-->180 yaw values to 0-->360
+    yaw = yaw < 0 ? yaw + 360 : yaw;
+
+    // Send change events to the Javascript side via the React Native bridge
+    // To avoid flooding the bridge, we only send if the values have changed
+    if ((pitch > (mLastPitch + PITCHTRIGGER)) || (pitch < (mLastPitch - PITCHTRIGGER)) ||
+        (roll > (mLastRoll + ROLLTRIGGER)) || (roll < (mLastRoll - ROLLTRIGGER)) ||
+        (yaw > (mLastYaw + YAWTRIGGER)) || (yaw < (mLastYaw - YAWTRIGGER))) {
+      WritableMap map = Arguments.createMap();
+      map.putDouble("timestamp", sensorEvent.timestamp * NS2MS);
+      map.putDouble("roll", roll);
+      map.putDouble("pitch", pitch);
+      map.putDouble("heading", yaw);
+      mReactContext.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class).emit("attitudeUpdate", map);
+      //Log.i(RNAttitudeModule.NAME, "roll = " + roll + ", pitch = " + pitch + ", yaw = " + yaw);
+      mLastPitch = pitch;
+      mLastRoll = roll;
+      mLastYaw = yaw;
+    }
+
+    mNextSampleTime = currentTime + mIntervalMillis;
+  }
+
+  private float[] getVectorFromSensorEvent(SensorEvent event) {
+    if (event.values.length > 4) {
+      // On some Samsung devices SensorManager.getRotationMatrixFromVector
+      // appears to throw an exception if rotation vector has length > 4.
+      // For the purposes of this class the first 4 values of the
+      // rotation vector are sufficient (see crbug.com/335298 for details).
+      // Only affects Android 4.3
+      return Arrays.copyOf(event.values, 4);
+    } else {
+      return event.values;
+    }
+  }
+
+  private float[] getInvertedAngles(float[] a, float[] b) {
+    a[ROLL] = a[ROLL] - b[ROLL];
+    if(a[ROLL] < -180) {
+      a[ROLL] *= -1;
+    }
+    a[PITCH] = a[PITCH] - b[PITCH];
+    if(a[PITCH] < -90) {
+      a[PITCH] *= -1;
+    }
+    return a;
   }
 
   @Override
@@ -209,14 +239,14 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
 
   @Override
   public void onHostResume() {
-    if(mObserving) {
+    if (mObserving) {
       mSensorManager.registerListener(this, mRotationSensor, mIntervalMillis * 1000);
     }
   }
 
   @Override
   public void onHostPause() {
-    if(mObserving) {
+    if (mObserving) {
       mSensorManager.unregisterListener(this);
     }
   }

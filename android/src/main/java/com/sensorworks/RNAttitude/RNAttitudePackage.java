@@ -17,6 +17,6 @@ public class RNAttitudePackage implements ReactPackage {
   }
   @Override
   public List<NativeModule> createNativeModules(ReactApplicationContext reactContext) {
-    return Arrays.<NativeModule>asList(new RNBarometerModule(reactContext));
+    return Arrays.<NativeModule>asList(new RNAttitudeModule(reactContext));
   }
 }

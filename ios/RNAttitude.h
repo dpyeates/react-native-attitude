@@ -5,13 +5,10 @@
 
 @interface RNAttitude : RCTEventEmitter <RCTBridgeModule> {
     // all angles are in degrees
-    // speed in metres per second
-    // altitude in metres
-    // pressure in millibars
     bool inverseReferenceInUse;
     bool observing;
     long long lastSampleTime;
-    int intervalMillis;
+    long intervalMillis;
     float roll;
     float pitch;
     float yaw;
