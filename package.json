@@ -1,7 +1,7 @@
 {
   "name": "react-native-attitude",
   "title": "React Native Attitude",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Obtain device attitude (roll, pitch and heading)",
   "main": "index.js",
   "scripts": {
@@ -9,7 +9,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/dpyeates/react-native-attitude.git",
+    "url": "git+https://github.com/dpyeates/react-native-attitude.git",
     "baseUrl": "https://github.com/dpyeates/react-native-attitude"
   },
   "keywords": [
@@ -31,8 +31,8 @@
   "licenseFilename": "LICENSE",
   "readmeFilename": "README.md",
   "peerDependencies": {
-    "react": "^16.8.1",
-    "react-native": ">=0.59.0-rc.0 <1.0.x"
+    "react": "*",
+    "react-native": "*"
   },
   "devDependencies": {
     "react": "^16.8.3",
