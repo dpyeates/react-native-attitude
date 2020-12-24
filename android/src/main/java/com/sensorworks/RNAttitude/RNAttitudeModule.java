@@ -50,7 +50,7 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
   private WindowManager mWindowManager = null;
   private boolean mInverseReferenceInUse = false;
   private boolean mObserving = false;
-  private int mIntervalMillis = 40;
+  private int mIntervalMillis = 100;
   private long mNextSampleTime = 0;
   private float[] mRotationMatrix = new float[9];
   private float[] mRemappedRotationMatrix = new float[9];
