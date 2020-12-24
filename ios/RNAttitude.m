@@ -15,7 +15,7 @@
 #import <React/RCTEventDispatcher.h>
 #import <React/RCTLog.h>
 
-#define UPDATERATEHZ 25
+#define UPDATERATEHZ 10
 #define DEGTORAD 0.017453292
 #define RADTODEG 57.29577951
 #define PITCHTRIGGER 0.5
@@ -96,8 +96,7 @@ RCT_EXPORT_METHOD(startObserving) {
         CMDeviceMotionHandler attitudeHandler = ^(CMDeviceMotion * _Nullable motion, NSError * _Nullable error)
         {
             long long tempMs = (long long)([[NSDate date] timeIntervalSince1970] * 1000.0);
-            long long timeSinceLastUpdate = (tempMs - self->lastSampleTime);
-            if(timeSinceLastUpdate >= self->intervalMillis){
+            if((tempMs - self->lastSampleTime) >= self->intervalMillis){
                 // get the current device orientation
                 UIDeviceOrientation orientation = [[UIDevice currentDevice] orientation];
                 // setup the 'default' heading and roll adjustment for portrait orientation
