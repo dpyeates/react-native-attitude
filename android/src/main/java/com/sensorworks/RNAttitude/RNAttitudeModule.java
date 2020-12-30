@@ -35,9 +35,6 @@ import com.facebook.react.modules.core.RCTNativeAppEventEmitter;
 public class RNAttitudeModule extends ReactContextBaseJavaModule implements LifecycleEventListener, SensorEventListener {
   public static final String NAME = "RNAttitude";
   private static final float NS2MS = 0.000001f;
-  private static final float PITCHTRIGGER = 0.5f;
-  private static final float ROLLTRIGGER = 0.5f;
-  private static final float YAWTRIGGER = 1.0f;
   private static final byte ROLL = 2;
   private static final byte PITCH = 1;
   private static final byte YAW = 0;
@@ -50,15 +47,12 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
   private WindowManager mWindowManager = null;
   private boolean mInverseReferenceInUse = false;
   private boolean mObserving = false;
-  private int mIntervalMillis = 100;
+  private int mIntervalMillis = 200;
   private long mNextSampleTime = 0;
   private float[] mRotationMatrix = new float[9];
   private float[] mRemappedRotationMatrix = new float[9];
   private float[] mRefAngles = new float[3];
   private float[] mInverseAngles = new float[3];
-  private double mLastRoll = 0;
-  private double mLastPitch = 0;
-  private double mLastYaw = 0;
 
   public RNAttitudeModule(ReactApplicationContext reactContext) {
     super(reactContext);
@@ -189,21 +183,12 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
     yaw = yaw < 0 ? yaw + 360 : yaw;
 
     // Send change events to the Javascript side via the React Native bridge
-    // To avoid flooding the bridge, we only send if the values have changed
-    if ((pitch > (mLastPitch + PITCHTRIGGER)) || (pitch < (mLastPitch - PITCHTRIGGER)) ||
-        (roll > (mLastRoll + ROLLTRIGGER)) || (roll < (mLastRoll - ROLLTRIGGER)) ||
-        (yaw > (mLastYaw + YAWTRIGGER)) || (yaw < (mLastYaw - YAWTRIGGER))) {
-      WritableMap map = Arguments.createMap();
-      map.putDouble("timestamp", sensorEvent.timestamp * NS2MS);
-      map.putDouble("roll", roll);
-      map.putDouble("pitch", pitch);
-      map.putDouble("heading", yaw);
-      mReactContext.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class).emit("attitudeUpdate", map);
-      //Log.i(RNAttitudeModule.NAME, "roll = " + roll + ", pitch = " + pitch + ", yaw = " + yaw);
-      mLastPitch = pitch;
-      mLastRoll = roll;
-      mLastYaw = yaw;
-    }
+    WritableMap map = Arguments.createMap();
+    map.putDouble("timestamp", sensorEvent.timestamp * NS2MS);
+    map.putDouble("roll", roll);
+    map.putDouble("pitch", pitch);
+    map.putDouble("heading", yaw);
+    mReactContext.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class).emit("attitudeUpdate", map);
 
     mNextSampleTime = currentTime + mIntervalMillis;
   }

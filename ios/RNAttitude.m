@@ -18,9 +18,6 @@
 #define UPDATERATEHZ 5
 #define DEGTORAD 0.017453292
 #define RADTODEG 57.29577951
-#define PITCHTRIGGER 0.5
-#define ROLLTRIGGER 0.5
-#define YAWTRIGGER 1.0
 
 @implementation RNAttitude
 
