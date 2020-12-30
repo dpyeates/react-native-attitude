@@ -1,7 +1,6 @@
 package com.sensorworks.RNAttitude;
 
 // FYI, nice article here: http://plaw.info/articles/sensorfusion/
-
 import java.util.Arrays;
 
 import android.os.SystemClock;
@@ -32,7 +31,8 @@ import com.facebook.react.modules.core.DeviceEventManagerModule;
 import com.facebook.react.modules.core.RCTNativeAppEventEmitter;
 
 @ReactModule(name = RNAttitudeModule.NAME)
-public class RNAttitudeModule extends ReactContextBaseJavaModule implements LifecycleEventListener, SensorEventListener {
+public class RNAttitudeModule extends ReactContextBaseJavaModule implements LifecycleEventListener,
+SensorEventListener {
   public static final String NAME = "RNAttitude";
   private static final float NS2MS = 0.000001f;
   private static final byte ROLL = 2;
@@ -70,7 +70,6 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
 
   //------------------------------------------------------------------------------------------------
   // React interface
-
   @ReactMethod
   // Sets the interval between event samples
   public void setInterval(int interval) {
@@ -100,8 +99,7 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
   // Starts observing pitch and roll
   public void startObserving(Promise promise) {
     if (mRotationSensor == null) {
-      promise.reject("-1",
-          "Rotation vector sensor not available; will not provide orientation data.");
+      promise.reject("-1", "Rotation vector sensor not available; will not provide orientation data.");
       return;
     }
     if (mWindowManager == null) {
@@ -122,7 +120,6 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
 
   //------------------------------------------------------------------------------------------------
   // Internal methods
-
   @Override
   public void onSensorChanged(SensorEvent sensorEvent) {
     long currentTime = SystemClock.elapsedRealtime();
@@ -138,36 +135,32 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
     final int worldAxisForDeviceAxisY;
 
     switch (mWindowManager.getDefaultDisplay().getRotation()) {
-      case Surface.ROTATION_0:
-      default:
-        worldAxisForDeviceAxisX = SensorManager.AXIS_X;
-        worldAxisForDeviceAxisY = SensorManager.AXIS_Z;
-        break;
-      case Surface.ROTATION_90:
-        worldAxisForDeviceAxisX = SensorManager.AXIS_Z;
-        worldAxisForDeviceAxisY = SensorManager.AXIS_MINUS_X;
-        break;
-      case Surface.ROTATION_180:
-        worldAxisForDeviceAxisX = SensorManager.AXIS_MINUS_X;
-        worldAxisForDeviceAxisY = SensorManager.AXIS_MINUS_Z;
-        break;
-      case Surface.ROTATION_270:
-        worldAxisForDeviceAxisX = SensorManager.AXIS_MINUS_Z;
-        worldAxisForDeviceAxisY = SensorManager.AXIS_X;
-        break;
+    case Surface.ROTATION_0:
+    default:
+      worldAxisForDeviceAxisX = SensorManager.AXIS_X;
+      worldAxisForDeviceAxisY = SensorManager.AXIS_Z;
+      break;
+    case Surface.ROTATION_90:
+      worldAxisForDeviceAxisX = SensorManager.AXIS_Z;
+      worldAxisForDeviceAxisY = SensorManager.AXIS_MINUS_X;
+      break;
+    case Surface.ROTATION_180:
+      worldAxisForDeviceAxisX = SensorManager.AXIS_MINUS_X;
+      worldAxisForDeviceAxisY = SensorManager.AXIS_MINUS_Z;
+      break;
+    case Surface.ROTATION_270:
+      worldAxisForDeviceAxisX = SensorManager.AXIS_MINUS_Z;
+      worldAxisForDeviceAxisY = SensorManager.AXIS_X;
+      break;
     }
 
     SensorManager.remapCoordinateSystem(
-        mRotationMatrix,
-        worldAxisForDeviceAxisX,
-        worldAxisForDeviceAxisY,
-        mRemappedRotationMatrix
-    );
+    mRotationMatrix, worldAxisForDeviceAxisX, worldAxisForDeviceAxisY, mRemappedRotationMatrix);
 
     SensorManager.getOrientation(mRemappedRotationMatrix, mRefAngles);
 
     float[] angles;
-    if(mInverseReferenceInUse) {
+    if (mInverseReferenceInUse) {
       angles = getInvertedAngles(mRefAngles, mInverseAngles);
     }
     else {
@@ -188,8 +181,11 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
     map.putDouble("roll", roll);
     map.putDouble("pitch", pitch);
     map.putDouble("heading", yaw);
-    mReactContext.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class).emit("attitudeUpdate", map);
-
+    try {
+      mReactContext.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class).emit("attitudeUpdate", map);
+    } catch(RuntimeException e) {
+      Log.e("ERROR", "Error sending event over the React bridge");
+    }
     mNextSampleTime = currentTime + mIntervalMillis;
   }
 
@@ -208,19 +204,18 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
 
   private float[] getInvertedAngles(float[] a, float[] b) {
     a[ROLL] = a[ROLL] - b[ROLL];
-    if(a[ROLL] < -180) {
+    if (a[ROLL] < -180) {
       a[ROLL] *= -1;
     }
     a[PITCH] = a[PITCH] - b[PITCH];
-    if(a[PITCH] < -90) {
+    if (a[PITCH] < -90) {
       a[PITCH] *= -1;
     }
     return a;
   }
 
   @Override
-  public void onAccuracyChanged(Sensor sensor, int accuracy) {
-  }
+  public void onAccuracyChanged(Sensor sensor, int accuracy) {}
 
   @Override
   public void onHostResume() {

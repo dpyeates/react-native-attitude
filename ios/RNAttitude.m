@@ -24,209 +24,214 @@
 RCT_EXPORT_MODULE();
 
 - (id)init {
-    self = [super init];
-    if (self) {
-        inverseReferenceInUse = false;
-        intervalMillis = (int)(1000 / UPDATERATEHZ);
-        lastSampleTime = 0;
-        
-        // Allocate and initialize the motion manager.
-        motionManager = [[CMMotionManager alloc] init];
-        [motionManager setShowsDeviceMovementDisplay:YES];
-        [motionManager setDeviceMotionUpdateInterval:intervalMillis * 0.001];
-       
-        // Allocate and initialize the operation queue for attitude updates.
-        attitudeQueue = [[NSOperationQueue alloc] init];
-        [attitudeQueue setName:@"DeviceMotion"];
-        [attitudeQueue setMaxConcurrentOperationCount:1];
-    }
-    return self;
+  self = [super init];
+  if (self) {
+    inverseReferenceInUse = false;
+    intervalMillis = (int)(1000 / UPDATERATEHZ);
+    lastSampleTime = 0;
+    
+    // Allocate and initialize the motion manager.
+    motionManager = [[CMMotionManager alloc] init];
+    [motionManager setShowsDeviceMovementDisplay:YES];
+    [motionManager setDeviceMotionUpdateInterval:intervalMillis * 0.001];
+    
+    // Allocate and initialize the operation queue for attitude updates.
+    attitudeQueue = [[NSOperationQueue alloc] init];
+    [attitudeQueue setName:@"DeviceMotion"];
+    [attitudeQueue setMaxConcurrentOperationCount:1];
+  }
+  return self;
 }
 
 + (BOOL)requiresMainQueueSetup
 {
-    return NO;
+  return NO;
 }
 
 - (NSArray<NSString *> *)supportedEvents
 {
-    return @[@"attitudeUpdate"];
+  return @[@"attitudeUpdate"];
 }
 
 // Determines if this device is capable of providing attitude updates - defaults to yes on IOS
 RCT_REMAP_METHOD(isSupported,
                  resolver:(RCTPromiseResolveBlock)resolve
                  rejecter:(RCTPromiseRejectBlock)reject) {
-    return resolve(@YES);
+  return resolve(@YES);
 }
 
 // Zeros the current roll and pitch values as the reference attitude
 RCT_EXPORT_METHOD(zero)
 {
-    inverseReferenceQuaternion.w = quaternion.w;
-    inverseReferenceQuaternion.x = -quaternion.x;
-    inverseReferenceQuaternion.y = -quaternion.y;
-    inverseReferenceQuaternion.z = -quaternion.z;
-    inverseReferenceInUse = true;
+  inverseReferenceQuaternion.w = quaternion.w;
+  inverseReferenceQuaternion.x = -quaternion.x;
+  inverseReferenceQuaternion.y = -quaternion.y;
+  inverseReferenceQuaternion.z = -quaternion.z;
+  inverseReferenceInUse = true;
 }
 
 // Resets any in use reference attitudes and start using the baseline attitude reference
 RCT_EXPORT_METHOD(reset)
 {
-    inverseReferenceInUse = false;
+  inverseReferenceInUse = false;
 }
 
 // Sets the interval between event samples
 RCT_EXPORT_METHOD(setInterval:(NSInteger)interval)
 {
-    self->intervalMillis = interval;
-    [motionManager setDeviceMotionUpdateInterval:intervalMillis * 0.001];
+  self->intervalMillis = interval;
+  [motionManager setDeviceMotionUpdateInterval:intervalMillis * 0.001];
 }
 
 // Starts observing pitch and roll
 RCT_EXPORT_METHOD(startObserving) {
-    if(!motionManager.isDeviceMotionActive) {
-        // the attitude update handler
-        CMDeviceMotionHandler attitudeHandler = ^(CMDeviceMotion * _Nullable motion, NSError * _Nullable error)
-        {
-            long long tempMs = (long long)([[NSDate date] timeIntervalSince1970] * 1000.0);
-            if((tempMs - self->lastSampleTime) >= self->intervalMillis){
-                // get the current device orientation
-                UIDeviceOrientation orientation = [[UIDevice currentDevice] orientation];
-                // setup the 'default' heading and roll adjustment for portrait orientation
-                int headingAdjustment = 0;
-                int rollAdjustment = 0;
-                // adjust if we are holding the device in either of the landscape orientations
-                if(orientation == UIInterfaceOrientationLandscapeLeft) {
-                    headingAdjustment = -90;
-                    rollAdjustment = -90;
-                }
-                else if(orientation == UIInterfaceOrientationLandscapeRight) {
-                    headingAdjustment = 90;
-                    rollAdjustment = 90;
-                }
-                // Get the core IOS device motion quaternion and heading values (requires iOS 11 or above)
-                CMQuaternion q = [[motion attitude] quaternion];
-                double heading = 0;
-                if (@available(iOS 11.0, *)) {
-                    heading = [motion heading];
-                }
-                // Create a quaternion representing an adjustment of 90 degrees to the core IOS
-                // reference frame. This moves it from the reference being sitting flat on
-                // the table to a frame where the user is holding looking 'through' the screen.
-                self->quaternion = quaternionMultiply(q, getWorldTransformationQuaternion());
-                // If we are using a pitch/roll reference 'offset' then apply the required transformation here.
-                // This is doing the same as the built-in multiplyByInverseOfAttitude.
-                if(self->inverseReferenceInUse) {
-                    CMQuaternion qRef = quaternionMultiply(self->inverseReferenceQuaternion, self->quaternion);
-                    computeEulerAnglesFromQuaternion(qRef, &self->roll, &self->pitch, &self->yaw);
-                }
-                else {
-                    computeEulerAnglesFromQuaternion(self->quaternion, &self->roll, &self->pitch, &self->yaw);
-                }
-                // adjust roll and heading for orientation
-                if(headingAdjustment != 0) {
-                    heading = normalizeRange(heading + headingAdjustment, 1, 360);
-                }
-                if(rollAdjustment != 0) {
-                    self->roll = normalizeRange(self->roll + rollAdjustment, -180, 180);
-                }
-                // Send change events to the Javascript side via the React Native bridge
-                [self sendEventWithName:@"attitudeUpdate"
-                  body:@{
-                      @"timestamp" : @(tempMs),
-                      @"roll" : @(self->roll),
-                      @"pitch": @(self->pitch),
-                      @"heading": @(heading),
-                  }
-                ];
-                self->lastSampleTime = tempMs;
-            }
-        };
-        
-        [motionManager startDeviceMotionUpdatesUsingReferenceFrame:CMAttitudeReferenceFrameXMagneticNorthZVertical toQueue:attitudeQueue withHandler:attitudeHandler];
-    }
+  if(!motionManager.isDeviceMotionActive) {
+    // the attitude update handler
+    CMDeviceMotionHandler attitudeHandler = ^(CMDeviceMotion * _Nullable motion, NSError * _Nullable error)
+    {
+      long long tempMs = (long long)([[NSDate date] timeIntervalSince1970] * 1000.0);
+      if((tempMs - self->lastSampleTime) >= self->intervalMillis){
+        // get the current device orientation
+        UIDeviceOrientation orientation = [[UIDevice currentDevice] orientation];
+        // setup the 'default' heading and roll adjustment for portrait orientation
+        int headingAdjustment = 0;
+        int rollAdjustment = 0;
+        // adjust if we are holding the device in either of the landscape orientations
+        if(orientation == UIInterfaceOrientationLandscapeLeft) {
+          headingAdjustment = -90;
+          rollAdjustment = -90;
+        }
+        else if(orientation == UIInterfaceOrientationLandscapeRight) {
+          headingAdjustment = 90;
+          rollAdjustment = 90;
+        }
+        // Get the core IOS device motion quaternion and heading values (requires iOS 11 or above)
+        CMQuaternion q = [[motion attitude] quaternion];
+        double heading = 0;
+        if (@available(iOS 11.0, *)) {
+          heading = [motion heading];
+        }
+        // Create a quaternion representing an adjustment of 90 degrees to the core IOS
+        // reference frame. This moves it from the reference being sitting flat on
+        // the table to a frame where the user is holding looking 'through' the screen.
+        self->quaternion = quaternionMultiply(q, getWorldTransformationQuaternion());
+        // If we are using a pitch/roll reference 'offset' then apply the required transformation here.
+        // This is doing the same as the built-in multiplyByInverseOfAttitude.
+        if(self->inverseReferenceInUse) {
+          CMQuaternion qRef = quaternionMultiply(self->inverseReferenceQuaternion, self->quaternion);
+          computeEulerAnglesFromQuaternion(qRef, &self->roll, &self->pitch, &self->yaw);
+        }
+        else {
+          computeEulerAnglesFromQuaternion(self->quaternion, &self->roll, &self->pitch, &self->yaw);
+        }
+        // adjust roll and heading for orientation
+        if(headingAdjustment != 0) {
+          heading = normalizeRange(heading + headingAdjustment, 1, 360);
+        }
+        if(rollAdjustment != 0) {
+          self->roll = normalizeRange(self->roll + rollAdjustment, -180, 180);
+        }
+        // Send change events to the Javascript side via the React Native bridge
+        @try {
+          [self sendEventWithName:@"attitudeUpdate"
+                             body:@{
+                               @"timestamp" : @(tempMs),
+                               @"roll" : @(self->roll),
+                               @"pitch": @(self->pitch),
+                               @"heading": @(heading),
+                             }
+           ];
+        }
+        @catch ( NSException *e ) {
+          NSLog( @"Error sending event over the React bridge");
+        }
+        self->lastSampleTime = tempMs;
+      }
+    };
+    
+    [motionManager startDeviceMotionUpdatesUsingReferenceFrame:CMAttitudeReferenceFrameXMagneticNorthZVertical toQueue:attitudeQueue withHandler:attitudeHandler];
+  }
 }
 
 // Stops observing pitch and roll
 RCT_EXPORT_METHOD(stopObserving) {
-    [motionManager stopDeviceMotionUpdates];
-    lastSampleTime = lastHeading = lastRoll = lastPitch = 0;
+  [motionManager stopDeviceMotionUpdates];
+  lastSampleTime = lastHeading = lastRoll = lastPitch = 0;
 }
 
 #pragma mark - Private methods
 
 CMQuaternion getWorldTransformationQuaternion() {
-    const static float worldAngle = 90 * DEGTORAD;
-    const static float minusHalfAngle = -worldAngle / 2;
-    CMQuaternion q_w;
-    q_w.w = cos(minusHalfAngle);
-    q_w.x = sin(minusHalfAngle);
-    q_w.y = 0;
-    q_w.z = 0;
-    return q_w;
+  const static float worldAngle = 90 * DEGTORAD;
+  const static float minusHalfAngle = -worldAngle / 2;
+  CMQuaternion q_w;
+  q_w.w = cos(minusHalfAngle);
+  q_w.x = sin(minusHalfAngle);
+  q_w.y = 0;
+  q_w.z = 0;
+  return q_w;
 }
 
 CMQuaternion quaternionMultiply(CMQuaternion a, CMQuaternion b) {
-    CMQuaternion q;
-    q.w = a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z;
-    q.x = a.x * b.w + a.w * b.x + a.y * b.z - a.z * b.y;
-    q.y = a.y * b.w + a.w * b.y + a.z * b.x - a.x * b.z;
-    q.z = a.z * b.w + a.w * b.z + a.x * b.y - a.y * b.x;
-    return q;
+  CMQuaternion q;
+  q.w = a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z;
+  q.x = a.x * b.w + a.w * b.x + a.y * b.z - a.z * b.y;
+  q.y = a.y * b.w + a.w * b.y + a.z * b.x - a.x * b.z;
+  q.z = a.z * b.w + a.w * b.z + a.x * b.y - a.y * b.x;
+  return q;
 }
 
 CMQuaternion getScreenTransformationQuaternion(float screenOrientation) {
-    const float orientationAngle = screenOrientation * DEGTORAD;
-    const float minusHalfAngle = -orientationAngle / 2;
-    CMQuaternion q_s;
-    q_s.w = cos(minusHalfAngle);
-    q_s.x = 0;
-    q_s.y = 0;
-    q_s.z = sin(minusHalfAngle);
-    return q_s;
+  const float orientationAngle = screenOrientation * DEGTORAD;
+  const float minusHalfAngle = -orientationAngle / 2;
+  CMQuaternion q_s;
+  q_s.w = cos(minusHalfAngle);
+  q_s.x = 0;
+  q_s.y = 0;
+  q_s.z = sin(minusHalfAngle);
+  return q_s;
 }
 
 // Calculates Euler angles from quaternion.
 // See http://www.euclideanspace.com/maths/geometry/rotations/conversions/quaternionToEuler/
 void computeEulerAnglesFromQuaternion(CMQuaternion q, float *roll, float *pitch, float *yaw) {
-    const float w2 = q.w * q.w;
-    const float x2 = q.x * q.x;
-    const float y2 = q.y * q.y;
-    const float z2 = q.z * q.z;
-    const float unitLength = w2 + x2 + y2 + z2; // Normalised == 1, otherwise correction divisor.
-    const float abcd = q.w * q.x + q.y * q.z;
-    const float eps = 1e-7f;
-    if (abcd > (0.5f - eps) * unitLength)
-    {
-        // singularity at north pole
-        *roll = 0.0f;
-        *pitch = (float)M_PI;
-        *yaw = 2.0f * atan2f(q.y, q.w);
-    }
-    else if (abcd < (-0.5f + eps) * unitLength)
-    {
-        // singularity at south pole
-        *roll  = 0.0f;
-        *pitch = (float)-M_PI;
-        *yaw   = -2.0f * atan2(q.y, q.w);
-    }
-    else
-    {
-        const float adbc = q.w * q.z - q.x * q.y;
-        const float acbd = q.w * q.y - q.x * q.z;
-        *roll  = atan2f(2.0f * acbd, 1.0f - 2.0f * (y2 + x2)) * RADTODEG;
-        *pitch = asinf(2.0f * abcd / unitLength) * RADTODEG;
-        *yaw   = atan2f(2.0f * adbc, 1.0f - 2.0f * (z2 + x2)) * RADTODEG;
-    }
+  const float w2 = q.w * q.w;
+  const float x2 = q.x * q.x;
+  const float y2 = q.y * q.y;
+  const float z2 = q.z * q.z;
+  const float unitLength = w2 + x2 + y2 + z2; // Normalised == 1, otherwise correction divisor.
+  const float abcd = q.w * q.x + q.y * q.z;
+  const float eps = 1e-7f;
+  if (abcd > (0.5f - eps) * unitLength)
+  {
+    // singularity at north pole
+    *roll = 0.0f;
+    *pitch = (float)M_PI;
+    *yaw = 2.0f * atan2f(q.y, q.w);
+  }
+  else if (abcd < (-0.5f + eps) * unitLength)
+  {
+    // singularity at south pole
+    *roll  = 0.0f;
+    *pitch = (float)-M_PI;
+    *yaw   = -2.0f * atan2(q.y, q.w);
+  }
+  else
+  {
+    const float adbc = q.w * q.z - q.x * q.y;
+    const float acbd = q.w * q.y - q.x * q.z;
+    *roll  = atan2f(2.0f * acbd, 1.0f - 2.0f * (y2 + x2)) * RADTODEG;
+    *pitch = asinf(2.0f * abcd / unitLength) * RADTODEG;
+    *yaw   = atan2f(2.0f * adbc, 1.0f - 2.0f * (z2 + x2)) * RADTODEG;
+  }
 }
 
 // limits a value between a maximum and minimum
 float normalizeRange(float val, float min, float max) {
-    const float step = max - min;
-    while(val >= max) val -= step;
-    while(val < min) val += step;
-    return val;
+  const float step = max - min;
+  while(val >= max) val -= step;
+  while(val < min) val += step;
+  return val;
 }
 
 @end
