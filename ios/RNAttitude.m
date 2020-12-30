@@ -15,7 +15,7 @@
 #import <React/RCTEventDispatcher.h>
 #import <React/RCTLog.h>
 
-#define UPDATERATEHZ 10
+#define UPDATERATEHZ 5
 #define DEGTORAD 0.017453292
 #define RADTODEG 57.29577951
 #define PITCHTRIGGER 0.5
@@ -31,9 +31,6 @@ RCT_EXPORT_MODULE();
     if (self) {
         inverseReferenceInUse = false;
         intervalMillis = (int)(1000 / UPDATERATEHZ);
-        lastHeading = 0;
-        lastRoll = 0;
-        lastPitch = 0;
         lastSampleTime = 0;
         
         // Allocate and initialize the motion manager.
@@ -138,22 +135,14 @@ RCT_EXPORT_METHOD(startObserving) {
                     self->roll = normalizeRange(self->roll + rollAdjustment, -180, 180);
                 }
                 // Send change events to the Javascript side via the React Native bridge
-                // To avoid flooding the bridge, we only send if the values have changed
-                if ((self->pitch > (self->lastPitch + PITCHTRIGGER)) || (self->pitch < (self->lastPitch - PITCHTRIGGER)) ||
-                     (self->roll > (self->lastRoll + ROLLTRIGGER)) || (self->roll < (self->lastRoll - ROLLTRIGGER)) ||
-                     (heading > (self->lastHeading + YAWTRIGGER)) || (heading < (self->lastHeading - YAWTRIGGER))) {
-                    [self sendEventWithName:@"attitudeUpdate"
-                        body:@{
-                            @"timestamp" : @(tempMs),
-                            @"roll" : @(self->roll),
-                            @"pitch": @(self->pitch),
-                            @"heading": @(heading),
-                        }
-                    ];
-                    self->lastRoll = self->roll;
-                    self->lastPitch = self->pitch;
-                    self->lastHeading = heading;
-                }
+                [self sendEventWithName:@"attitudeUpdate"
+                  body:@{
+                      @"timestamp" : @(tempMs),
+                      @"roll" : @(self->roll),
+                      @"pitch": @(self->pitch),
+                      @"heading": @(heading),
+                  }
+                ];
                 self->lastSampleTime = tempMs;
             }
         };

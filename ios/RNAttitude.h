@@ -13,9 +13,6 @@
     float pitch;
     float yaw;
     float heading;
-    float lastHeading;
-    float lastRoll;
-    float lastPitch;
     CMQuaternion quaternion;
     CMQuaternion inverseReferenceQuaternion;
     CMMotionManager *motionManager;
