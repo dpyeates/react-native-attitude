@@ -115,7 +115,7 @@ SensorEventListener {
   public void stopObserving() {
     mSensorManager.unregisterListener(this);
     mObserving = false;
-    mLastPitch = mLastRoll = mLastYaw = mNextSampleTime = 0;
+    mNextSampleTime = 0;
   }
 
   //------------------------------------------------------------------------------------------------

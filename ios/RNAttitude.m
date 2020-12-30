@@ -156,7 +156,7 @@ RCT_EXPORT_METHOD(startObserving) {
 // Stops observing pitch and roll
 RCT_EXPORT_METHOD(stopObserving) {
   [motionManager stopDeviceMotionUpdates];
-  lastSampleTime = lastHeading = lastRoll = lastPitch = 0;
+  lastSampleTime = 0;
 }
 
 #pragma mark - Private methods
