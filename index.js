@@ -74,8 +74,13 @@ const Attitude = {
   // Sets the interval between event samples
   setInterval: function(interval) {
     RNAttitude.setInterval(interval);
-  }
+  },
   
+  // Sets the device rotation to either 'none', 'left' or 'right'
+  setRotation: function(rotation) {
+    RNAttitude.setRotation(rotation);
+  }
+
 };
 
 export default Attitude;

@@ -1,7 +1,9 @@
   
 # react-native-attitude
 
-Provides Attitude (Roll, Pitch & Heading) in degrees for iOS and Android.
+This module provides device attitude (Roll, Pitch & Heading) in degrees for iOS and Android.<br/>
+It uses a reference frame that assumes the user is looking 'through' the screen - typical to many augmented reality applications.<br/>
+It uses Core Motion Quaternions on iOS and the Rotation Vector sensor on Android.
   
 ## Getting started
 
@@ -11,9 +13,8 @@ or
 
 `npm install react-native-attitude --save`
 
-### Mostly automatic installation (react-native 0.59 and lower)
-
-`react-native link react-native-attitude`
+Since ****react-native 0.60**** and higher, [autolinking](https://github.com/react-native-community/cli/blob/master/docs/autolinking.md) makes the installation process simpler.<br/>
+If you are using React Native 0.60 or higher, no other installation steps are required.
 
 ### Manual installation (react-native 0.59 and lower)
 
@@ -91,7 +92,6 @@ protected List<ReactPackage> getPackages() {
 ```
 </details>
 
-Since ****react-native 0.60**** and higher, [autolinking](https://github.com/react-native-community/cli/blob/master/docs/autolinking.md) makes the installation process simpler
 
 ## Usage
 
@@ -107,11 +107,11 @@ Attitude.watch((payload => {});
 
 ## Methods
 
-### Summary
-
 *  [`isSupported`](#issupported)
 
 *  [`setInterval`](#setinterval)
+
+*  [`setRotation`](#setRotation)
 
 *  [`zero`](#zero)
 
@@ -125,22 +125,24 @@ Attitude.watch((payload => {});
 
 ---
 
-### Details
+## Details
 
 #### `isSupported()`
 
-Before using, check to see if attitude updates are supported on the device.
+Checks to see if attitude updates are supported on the device.<br/>
+This always returns true on iOS devices.
 
 ```javascript
 
-const isSupported = Attitude.isSupported();
+const isSupported = await Attitude.isSupported();
 
 ```
 ---
 
 #### `setInterval()`
 
-Optionally request an update interval in ms. The default update rate is (approx) 40ms, i.e. 25Hz.
+Optionally request an update interval in ms. The default update rate is (approx) 20ms, i.e. 5Hz.<br/>
+This is a request - updates may come slower than the rate you specify, but never faster.
 
 ```javascript
 
@@ -148,6 +150,22 @@ Optionally request an update interval in ms. The default update rate is (approx)
 
 Attitude.setInterval(1000);
 
+```
+---
+
+#### `setRotationl(['none', 'left' or 'right']])`
+
+Optionally tell the module if you would like the results rotated. This is typically used when the phone/device is in a rotated state. The module defaults to 'none', which for most devices means no rotation or 'portrait' screen orientation. Passing 'left' to setRotation is used when the device has rotated to landscape left (top of phone/device when you look at it is rotated left by 90 degrees). Passing 'right' to setRotation is used when the device has rotated to landscape right (top of phone/device when you look at it is rotated right by 90 degrees)
+
+NOTE: Version 1 of this module did this automatically within the module but this sometimes meant there was a conflict between the native side and the javascript side. Version 2 of this modules pulls this out and makes it explicit.
+
+```javascript
+
+// set the device rotation to either 'none', 'left' or 'right'
+
+Attitude.setRotation('none'); // default
+Attitude.setRotation('left'); 
+Attitude.setRotation('right'); 
 ```
 ---
 
@@ -191,7 +209,7 @@ Returns a `watchId` (number).
 
 | Name  | Type | Required | Description |
 | ------- | -------- | -------- | ----------------------------------------- |
-| success | function | Yes  | Invoked at a default interval of 25hz This can be changed by using the setInterval method.  |
+| success | function | Yes  | Invoked at a default interval of 5hz This can be changed by using the setInterval method.  |
 
 ****Example:****
 
@@ -244,4 +262,5 @@ Stops observing for all attitude updates.
 In addition, it removes all listeners previously registered.
 
 Note that this method does nothing if the `Attitude.watch(successCallback)` method has not previously been called.
+
 

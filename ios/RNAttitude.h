@@ -4,19 +4,17 @@
 #import <CoreMotion/CoreMotion.h>
 
 @interface RNAttitude : RCTEventEmitter <RCTBridgeModule> {
-    // all angles are in degrees
-    bool inverseReferenceInUse;
-    bool observing;
-    long long lastSampleTime;
-    long intervalMillis;
-    float roll;
-    float pitch;
-    float yaw;
-    float heading;
-    CMQuaternion quaternion;
-    CMQuaternion inverseReferenceQuaternion;
-    CMMotionManager *motionManager;
-    NSOperationQueue *attitudeQueue;
+  // all angles are in degrees
+  bool inverseReferenceInUse;
+  long long nextSampleTime;
+  long intervalMillis;
+  long rotation;
+  CMQuaternion coreQuaternion;
+  CMQuaternion worldQuaternion;
+  CMQuaternion baseWorldQuaternion;
+  CMQuaternion inverseReferenceQuaternion;
+  CMMotionManager *motionManager;
+  NSOperationQueue *attitudeQueue;
 }
 
 @end
