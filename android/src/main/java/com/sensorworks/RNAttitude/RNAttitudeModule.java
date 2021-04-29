@@ -199,8 +199,7 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
       SensorManager.remapCoordinateSystem(rotationMatrix, SensorManager.AXIS_X, SensorManager.AXIS_Z, remappedMatrix);
     }
 
-    float heading = (float) (((((Math.toDegrees(SensorManager.getOrientation(remappedMatrix, orientation)[0]) + 360) % 360) -
-        (Math.toDegrees(SensorManager.getOrientation(remappedMatrix, orientation)[2]))) + 360) % 360);
+    float heading = (float) ((Math.toDegrees(SensorManager.getOrientation(remappedMatrix, orientation)[0]) + 360) % 360);
 
     // apply any pitch and roll offsets
     if(pitchOffset != 0 || rollOffset != 0) {
