@@ -24,6 +24,14 @@
 #define ROTATE_LEFT 1
 #define ROTATE_RIGHT 2
 
+#define AXIS_X 1
+#define AXIS_Y 2
+#define AXIS_Z 3
+#define AXIS_MINUS_X (AXIS_X | 0x80)
+#define AXIS_MINUS_Y (AXIS_Y | 0x80)
+#define AXIS_MINUS_Z (AXIS_Z | 0x80)
+
+
 @implementation RNAttitude
 
 RCT_EXPORT_MODULE();
@@ -31,11 +39,10 @@ RCT_EXPORT_MODULE();
 - (id)init {
   self = [super init];
   if (self) {
-    inverseReferenceInUse = false;
     intervalMillis = (int)(1000 / UPDATERATEHZ);
-    nextSampleTime = 0;
     rotation = ROTATE_NONE;
-    baseWorldQuaternion = getWorldTransformationQuaternion();
+    pitchOffset = 0;
+    rollOffset = 0;
     
     // Allocate and initialize the motion manager.
     motionManager = [[CMMotionManager alloc] init];
@@ -71,28 +78,27 @@ RCT_REMAP_METHOD(isSupported,
 // Basically it makes a new 'zero' position for both pitch and roll.
 RCT_EXPORT_METHOD(zero)
 {
-  inverseReferenceQuaternion.w = worldQuaternion.w;
-  inverseReferenceQuaternion.x = -worldQuaternion.x;
-  inverseReferenceQuaternion.y = -worldQuaternion.y;
-  inverseReferenceQuaternion.z = -worldQuaternion.z;
-  inverseReferenceInUse = true;
+  self->pitchOffset = -self->pitch;
+  self->rollOffset = -self->roll;
 }
 
-// Resets the inverse quaternion in use and goes back to using the default 'zero' position
+// Resets the pitch and roll offsets
 RCT_EXPORT_METHOD(reset)
 {
-  inverseReferenceInUse = false;
-  inverseReferenceQuaternion.w = 0;
-  inverseReferenceQuaternion.x = 0;
-  inverseReferenceQuaternion.y = 0;
-  inverseReferenceQuaternion.z = 0;
+  self->pitchOffset = 0;
+  self->rollOffset = 0;
 }
 
 // Sets the interval between event samples
 RCT_EXPORT_METHOD(setInterval:(NSInteger)interval)
 {
   self->intervalMillis = interval;
+  bool shouldStart = motionManager.isDeviceMotionActive;
+  [self stopObserving];
   [motionManager setDeviceMotionUpdateInterval:intervalMillis * 0.001];
+  if(shouldStart) {
+    [self startObserving];
+  }
 }
 
 // Sets the device rotation to either 'none', 'left' or 'right'
@@ -109,70 +115,64 @@ RCT_EXPORT_METHOD(setRotation:(NSString *)rotation)
   } else {
     NSLog( @"Unrecognised rotation passed to react-native-attitude, must be 'none','left' or 'right' only");
   }
-  if(self->inverseReferenceInUse) {
-    inverseReferenceInUse = false;
-  }
+  [self reset];
 }
 
 RCT_EXPORT_METHOD(startObserving) {
   if(!motionManager.isDeviceMotionActive) {
-    nextSampleTime = 0;
+    
     // the attitude update handler
     CMDeviceMotionHandler attitudeHandler = ^(CMDeviceMotion * _Nullable motion, NSError * _Nullable error)
     {
-      long long currentTime = (long long)([[NSDate date] timeIntervalSince1970] * 1000.0);
-      if (currentTime < self->nextSampleTime) {
-        return;
-      }
-     
-      // Extract the quaternion
-      self->coreQuaternion = [[motion attitude] quaternion];
-        
-      // Adjust the core motion quaternion and heading result for left/right screen orientations
-      CMQuaternion screenQuaternion;
-      if(self->rotation == ROTATE_LEFT) {
-        screenQuaternion = quaternionMultiply(self->coreQuaternion, getScreenTransformationQuaternion(90));
-      } else if(self->rotation == ROTATE_RIGHT) {
-        screenQuaternion = quaternionMultiply(self->coreQuaternion, getScreenTransformationQuaternion(-90));
+      double rotationMatrix[9], remappedMatrix[9];
+      
+      // Get the current attitude values
+      CMAttitude *currentAttitude = self->motionManager.deviceMotion.attitude;
+      
+      // convert to a float array rotation matrix
+      CMRotationMatrixToFloatArray(currentAttitude.rotationMatrix, rotationMatrix);
+      
+      // Remap the coordinate system depending on screen orientation
+      if (self->rotation == ROTATE_LEFT) {
+        remapCoordinateSystem(rotationMatrix, AXIS_Z, AXIS_MINUS_X, remappedMatrix);
+      } else if (self->rotation == ROTATE_RIGHT) {
+        remapCoordinateSystem(rotationMatrix, AXIS_MINUS_Z, AXIS_X, remappedMatrix);
       } else {
-        screenQuaternion = self->coreQuaternion; // no adjustment needed
+        remapCoordinateSystem(rotationMatrix, AXIS_X, AXIS_Z, remappedMatrix);
       }
-
-      // Adjust the screen quaternion for our 'real-world' viewport.
-      // This is an adjustment of 90 degrees to the core reference frame.
-      // This moves the reference from sitting flat on the table to a frame where
-      // the user is holding looking 'through' the screen.
-      self->worldQuaternion = quaternionMultiply(screenQuaternion, self->baseWorldQuaternion);
       
-      // Extract heading from world quaternion before we apply any inverse reference offset
-      double heading = computeYawEulerAngleFromQuaternion(self->worldQuaternion);
-      
-      // If we are using a inverse reference offset then apply the required transformation
-      if (self->inverseReferenceInUse) {
-        self->worldQuaternion = quaternionMultiply(self->inverseReferenceQuaternion, self->worldQuaternion);
+      // apply any pitch and roll offsets
+      if(self->pitchOffset != 0 || self->rollOffset != 0) {
+        double offsetMatrix1[9], offsetMatrix2[9];
+        applyPitchOffset(self->pitchOffset, remappedMatrix, offsetMatrix1);
+        applyRollOffset(self->rollOffset, offsetMatrix1, offsetMatrix2);
+        getOrientation(offsetMatrix2, &self->pitch, &self->roll);
       }
-    
-      // Extract the roll and pitch euler angles from the world quaternion
-      double roll, pitch;
-      computeRollPitchEulerAnglesFromQuaternion(self->worldQuaternion,  &roll, &pitch);
+      else {
+        getOrientation(remappedMatrix, &self->pitch, &self->roll);
+      }
+      
+      // Get the current heading
+      if (@available(iOS 11.0, *)) {
+        self->heading = self->motionManager.deviceMotion.heading;
+      } else {
+        self->heading = 0;
+      }
       
       // Send change events to the Javascript side via the React Native bridge
       @try {
         [self sendEventWithName:@"attitudeUpdate"
                            body:@{
-                             @"timestamp" : @(currentTime),
-                             @"roll" : @(roll),
-                             @"pitch": @(pitch),
-                             @"heading": @(heading),
+                             @"timestamp" : @((long long)([[NSDate date] timeIntervalSince1970] * 1000.0)),
+                             @"roll" : @(self->roll),
+                             @"pitch": @(self->pitch),
+                             @"heading": @(self->heading),
                            }
          ];
       }
       @catch ( NSException *e ) {
         NSLog( @"Error sending event over the React bridge");
       }
-      
-      // Calculate the next time we should run
-      self->nextSampleTime = currentTime + self->intervalMillis;
     };
     
     [motionManager startDeviceMotionUpdatesUsingReferenceFrame:CMAttitudeReferenceFrameXMagneticNorthZVertical toQueue:attitudeQueue withHandler:attitudeHandler];
@@ -180,7 +180,9 @@ RCT_EXPORT_METHOD(startObserving) {
 }
 
 RCT_EXPORT_METHOD(stopObserving) {
-  [motionManager stopDeviceMotionUpdates];
+  if(motionManager.isDeviceMotionActive) {
+    [motionManager stopDeviceMotionUpdates];
+  }
 }
 
 //------------------------------------------------------------------------------------------------
@@ -188,77 +190,94 @@ RCT_EXPORT_METHOD(stopObserving) {
 
 #pragma mark - Private methods
 
-CMQuaternion getScreenTransformationQuaternion(double screenOrientation) {
-  const double orientationAngle = screenOrientation * DEGTORAD;
-  const double minusHalfAngle = -orientationAngle / 2;
-  CMQuaternion q_s;
-  q_s.w = cos(minusHalfAngle);
-  q_s.x = 0;
-  q_s.y = 0;
-  q_s.z = sin(minusHalfAngle);
-  return q_s;
-}
-
-CMQuaternion getWorldTransformationQuaternion() {
-  const double worldAngle = 90 * DEGTORAD;
-  const double minusHalfAngle = -worldAngle / 2;
-  CMQuaternion q_w;
-  q_w.w = cos(minusHalfAngle);
-  q_w.x = sin(minusHalfAngle);
-  q_w.y = 0;
-  q_w.z = 0;
-  return q_w;
-}
-
-CMQuaternion quaternionMultiply(CMQuaternion a, CMQuaternion b) {
-  CMQuaternion q;
-  q.w = a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z;
-  q.x = a.x * b.w + a.w * b.x + a.y * b.z - a.z * b.y;
-  q.y = a.y * b.w + a.w * b.y + a.z * b.x - a.x * b.z;
-  q.z = a.z * b.w + a.w * b.z + a.x * b.y - a.y * b.x;
-  return q;
-}
-
-// Calculates Euler angles from quaternion.
-// See http://www.euclideanspace.com/maths/geometry/rotations/conversions/quaternionToEuler/
-void computeRollPitchEulerAnglesFromQuaternion(CMQuaternion q, double *roll, double *pitch) {
-  const double w2 = q.w * q.w;
-  const double x2 = q.x * q.x;
-  const double y2 = q.y * q.y;
-  const double z2 = q.z * q.z;
-  const double unitLength = w2 + x2 + y2 + z2; // Normalised == 1, otherwise correction divisor.
-  const double abcd = q.w * q.x + q.y * q.z;
-  const double eps = 1e-7f;
-  if (abcd > (0.5f - eps) * unitLength)
-  {
-    // singularity at north pole
-    *roll = 0.0f;
-    *pitch = (double)M_PI;
+// Rotates the supplied rotation matrix so it is expressed in a different coordinate system.
+void remapCoordinateSystem(double inR[], int X, int Y, double outR[]) {
+  // Z is "the other" axis, its sign is either +/- sign(X)*sign(Y)
+  // this can be calculated by exclusive-or'ing X and Y; except for
+  // the sign inversion (+/-) which is calculated below.
+  int Z = X ^ Y;
+  // extract the axis (remove the sign), offset in the range 0 to 2.
+  int x = (X & 0x3) - 1;
+  int y = (Y & 0x3) - 1;
+  int z = (Z & 0x3) - 1;
+  // compute the sign of Z (whether it needs to be inverted)
+  int axis_y = (z + 1) % 3;
+  int axis_z = (z + 2) % 3;
+  if (((x ^ axis_y) | (y ^ axis_z)) != 0) {
+    Z ^= 0x80;
   }
-  else if (abcd < (-0.5f + eps) * unitLength)
-  {
-    // singularity at south pole
-    *roll  = 0.0f;
-    *pitch = (double)-M_PI;
-  }
-  else
-  {
-    const double acbd = q.w * q.y - q.x * q.z;
-    *roll  = atan2(2.0f * acbd, 1.0f - 2.0f * (y2 + x2)) * RADTODEG;
-    *pitch = asin(2.0f * abcd / unitLength) * RADTODEG;
+  bool sx = (X >= 0x80);
+  bool sy = (Y >= 0x80);
+  bool sz = (Z >= 0x80);
+  // Perform R * r, in avoiding actual muls and adds.
+  for (int j = 0; j < 3; j++) {
+    int offset = j * 3;
+    for (int i = 0; i < 3; i++) {
+      if (x == i) outR[offset + i] = sx ? -inR[offset + 0] : inR[offset + 0];
+      if (y == i) outR[offset + i] = sy ? -inR[offset + 1] : inR[offset + 1];
+      if (z == i) outR[offset + i] = sz ? -inR[offset + 2] : inR[offset + 2];
+    }
   }
 }
 
-// Calculates the yaw (heading) euler angle only from a quaternion.
-double computeYawEulerAngleFromQuaternion(CMQuaternion q) {
-  const double x2 = q.x * q.x;
-  const double z2 = q.z * q.z;
-  const double adbc = q.w * q.z - q.x * q.y;
-  double y = -atan2(2.0 * adbc, 1.0 - 2.0 * (z2 + x2)) * RADTODEG;
-  if (y < 0) {
-    y += 360;
-  }
-  return y;
+// Computes the device's orientation based on the rotation matrix.
+// R should be double[9] array representing a rotation matrix
+void getOrientation(double R[9], double *pitch, double *roll) {
+  // /  R[ 0]   R[ 1]   R[ 2]  \
+  // |  R[ 3]   R[ 4]   R[ 5]  |
+  // \  R[ 6]   R[ 7]   R[ 8]  /
+  *pitch = asin(R[7]) * RADTODEG;
+  *roll = atan2(-R[6], R[8]) * RADTODEG;
+}
+
+// Apply a rotation about the roll axis to this rotation matrix.
+// see http://planning.cs.uiuc.edu/node102.html
+void applyRollOffset(double roll, double matrixIn[], double matrixOut[]) {
+  double value = roll * DEGTORAD;
+  double rotateMatrix[] = {
+    cos(value), 0, sin(value),
+    0, 1, 0,
+    -sin(value), 0, cos(value)
+  };
+  matrixMultiply(matrixIn, rotateMatrix, matrixOut);
+}
+
+// Apply a rotation about the pitch axis to this rotation matrix.
+// see http://planning.cs.uiuc.edu/node102.html
+void applyPitchOffset(double pitch, double matrixIn[], double matrixOut[]) {
+  double value = pitch * DEGTORAD;
+  double rotateMatrix[] = {
+    1, 0, 0,
+    0, cos(value), -sin(value),
+    0, sin(value), cos(value)
+  };
+  matrixMultiply(matrixIn, rotateMatrix, matrixOut);
+}
+
+// multiplies two rotation matrix, A and B
+void matrixMultiply(double A[], double B[], double result[]) {
+  result[0] = A[0] * B[0] + A[1] * B[3] + A[2] * B[6];
+  result[1] = A[0] * B[1] + A[1] * B[4] + A[2] * B[7];
+  result[2] = A[0] * B[2] + A[1] * B[5] + A[2] * B[8];
+  result[3] = A[3] * B[0] + A[4] * B[3] + A[5] * B[6];
+  result[4] = A[3] * B[1] + A[4] * B[4] + A[5] * B[7];
+  result[5] = A[3] * B[2] + A[4] * B[5] + A[5] * B[8];
+  result[6] = A[6] * B[0] + A[7] * B[3] + A[8] * B[6];
+  result[7] = A[6] * B[1] + A[7] * B[4] + A[8] * B[7];
+  result[8] = A[6] * B[2] + A[7] * B[5] + A[8] * B[8];
+}
+
+// converts a CMRotationMatrix to a basic double[9] array
+void CMRotationMatrixToFloatArray(CMRotationMatrix rotIn, double rotOut[]) {
+  rotOut[0] = rotIn.m11;
+  rotOut[1] = rotIn.m21;
+  rotOut[2] = rotIn.m31;
+  rotOut[3] = rotIn.m12;
+  rotOut[4] = rotIn.m22;
+  rotOut[5] = rotIn.m32;
+  rotOut[6] = rotIn.m13;
+  rotOut[7] = rotIn.m23;
+  rotOut[8] = rotIn.m33;
 }
 
 @end

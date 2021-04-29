@@ -38,9 +38,7 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
     SensorEventListener {
   public static final String NAME = "RNAttitude";
   private static final double NS2MS = 0.000001;
-  private static final byte YAW = 0;
-  private static final byte PITCH = 1;
-  private static final byte ROLL = 2;
+
   private static final byte ROTATE_NONE = 0;
   private static final byte ROTATE_LEFT = 1;
   private static final byte ROTATE_RIGHT = 2;
@@ -48,12 +46,13 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
   private final ReactApplicationContext reactContext;
   private final Sensor rotationSensor;
   private final SensorManager sensorManager;
-  private boolean inverseReferenceInUse;
   private int intervalMillis;
   private long nextSampleTime;
-  private int rotation;
-  private float[] inverseAngles = new float[3];
-  private final float[] refAngles = new float[3];
+  private long rotation;
+  private boolean isRunning;
+  private float pitchOffset;
+  private float rollOffset;
+  private float[] eulerAngles = new float[2];
 
   public RNAttitudeModule(ReactApplicationContext reactContext) {
     super(reactContext);
@@ -61,10 +60,12 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
     this.reactContext.addLifecycleEventListener(this);
     sensorManager = (SensorManager) reactContext.getSystemService(Context.SENSOR_SERVICE);
     rotationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
-    inverseReferenceInUse = false;
+    isRunning = false;
     intervalMillis = 200;
     nextSampleTime = 0;
     rotation = ROTATE_NONE;
+    pitchOffset = 0;
+    rollOffset = 0;
   }
 
   @Override
@@ -77,12 +78,16 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
 
   @Override
   public void onHostResume() {
-    sensorManager.registerListener(this, rotationSensor, intervalMillis * 1000);
+    if(isRunning) {
+      sensorManager.registerListener(this, rotationSensor, intervalMillis * 1000);
+    }
   }
 
   @Override
   public void onHostPause() {
-    sensorManager.unregisterListener(this);
+    if(isRunning) {
+      sensorManager.unregisterListener(this);
+    }
   }
 
   @Override
@@ -103,20 +108,26 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
   // Applies an inverse to core data and compensates for any non-zero installations.
   // Basically it makes a new 'zero' position for both pitch and roll.
   public void zero() {
-    inverseAngles = Arrays.copyOf(refAngles, 3);
-    inverseReferenceInUse = true;
+    pitchOffset = -eulerAngles[0];
+    rollOffset = -eulerAngles[1];
   }
 
   @ReactMethod
-  // Resets the inverse quaternion in use and goes back to using the default 'zero' position
+  // Resets the pitch and roll offsets
   public void reset() {
-    inverseReferenceInUse = false;
+    pitchOffset = 0;
+    rollOffset = 0;
   }
 
   @ReactMethod
   // Sets the interval between event samples
   public void setInterval(int interval) {
     intervalMillis = interval;
+    boolean shouldStart = isRunning;
+    stopObserving();
+    if(shouldStart) {
+      startObserving(null);
+    }
   }
 
   @ReactMethod
@@ -138,6 +149,7 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
         Log.e("ERROR", "Unrecognised rotation passed to react-native-attitude, must be 'none','left' or 'right' only");
         break;
     }
+    reset();
   }
 
   @ReactMethod
@@ -148,12 +160,16 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
     }
     nextSampleTime = 0;
     sensorManager.registerListener(this, rotationSensor, intervalMillis * 1000);
-    promise.resolve(intervalMillis);
+    isRunning = true;
+    if(promise != null) {
+      promise.resolve(intervalMillis);
+    }
   }
 
   @ReactMethod
   public void stopObserving() {
     sensorManager.unregisterListener(this);
+    isRunning = false;
   }
 
   //------------------------------------------------------------------------------------------------
@@ -162,7 +178,8 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
   @Override
   public void onSensorChanged(SensorEvent sensorEvent) {
     float[] rotationMatrix = new float[9];
-    float[] remappedRotationMatrix = new float[9];
+    float[] remappedMatrix = new float[9];
+    float[] orientation = new float[3];
 
     // Time to run?
     long currentTime = SystemClock.elapsedRealtime();
@@ -170,39 +187,36 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
       return;
     }
 
+    // Get the current attitude value as a rotation matrix
     SensorManager.getRotationMatrixFromVector(rotationMatrix, getVectorFromSensorEvent(sensorEvent));
 
+    // Remap the coordinate system depending on screen orientation
     if (rotation == ROTATE_LEFT) {
-      SensorManager.remapCoordinateSystem(rotationMatrix, SensorManager.AXIS_Z, SensorManager.AXIS_MINUS_X, remappedRotationMatrix);
+      SensorManager.remapCoordinateSystem(rotationMatrix, SensorManager.AXIS_Z, SensorManager.AXIS_MINUS_X, remappedMatrix);
     } else if (rotation == ROTATE_RIGHT) {
-      SensorManager.remapCoordinateSystem(rotationMatrix, SensorManager.AXIS_MINUS_Z, SensorManager.AXIS_X, remappedRotationMatrix);
+      SensorManager.remapCoordinateSystem(rotationMatrix, SensorManager.AXIS_MINUS_Z, SensorManager.AXIS_X, remappedMatrix);
     } else {
-      SensorManager.remapCoordinateSystem(rotationMatrix, SensorManager.AXIS_X, SensorManager.AXIS_Z, remappedRotationMatrix);
+      SensorManager.remapCoordinateSystem(rotationMatrix, SensorManager.AXIS_X, SensorManager.AXIS_Z, remappedMatrix);
     }
 
-    SensorManager.getOrientation(remappedRotationMatrix, refAngles);
+    float heading = (float) (((((Math.toDegrees(SensorManager.getOrientation(remappedMatrix, orientation)[0]) + 360) % 360) -
+        (Math.toDegrees(SensorManager.getOrientation(remappedMatrix, orientation)[2]))) + 360) % 360);
 
-    float[] eulerAngles;
-    if (inverseReferenceInUse) {
-      eulerAngles = getInvertedAngles(refAngles, inverseAngles);
+    // apply any pitch and roll offsets
+    if(pitchOffset != 0 || rollOffset != 0) {
+      float[] offsetMatrix = applyPitchOffset(pitchOffset, remappedMatrix);
+      offsetMatrix = applyRollOffset(rollOffset, offsetMatrix);
+      eulerAngles = getOrientation(offsetMatrix);
     }
     else {
-      eulerAngles = Arrays.copyOf(refAngles, 3);
+      eulerAngles = getOrientation(remappedMatrix);
     }
-
-    // Convert radians to degrees, inverse correction needed for pitch to make 'up' positive
-    eulerAngles[PITCH] = (float)-Math.toDegrees(eulerAngles[PITCH]);
-    eulerAngles[ROLL] = (float)Math.toDegrees(eulerAngles[ROLL]);
-    eulerAngles[YAW] = (float)Math.toDegrees(eulerAngles[YAW]);
-
-    // Convert -180<-->180 yaw values to 0-->360
-    eulerAngles[YAW] = eulerAngles[YAW] < 0 ? eulerAngles[YAW] + 360 : eulerAngles[YAW];
 
     WritableMap map = Arguments.createMap();
     map.putDouble("timestamp", sensorEvent.timestamp * NS2MS);
-    map.putDouble("roll", eulerAngles[ROLL]);
-    map.putDouble("pitch", eulerAngles[PITCH]);
-    map.putDouble("heading", eulerAngles[YAW]);
+    map.putDouble("roll", eulerAngles[1]);
+    map.putDouble("pitch", eulerAngles[0]);
+    map.putDouble("heading", heading);
     try {
       reactContext.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class).emit("attitudeUpdate", map);
     } catch (RuntimeException e) {
@@ -226,16 +240,87 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
     }
   }
 
-  private float[] getInvertedAngles(float[] a, float[] b) {
-    a[ROLL] = a[ROLL] - b[ROLL];
-    if (a[ROLL] < -180) {
-      a[ROLL] *= -1;
+  // Rotates the supplied rotation matrix so it is expressed in a different coordinate system.
+  private float[] remapCoordinateSystem(float[] inR, int X, int Y) {
+    float[] outR = new float[9];
+    // Z is "the other" axis, its sign is either +/- sign(X)*sign(Y)
+    // this can be calculated by exclusive-or'ing X and Y; except for
+    // the sign inversion (+/-) which is calculated below.
+    int Z = X ^ Y;
+    // extract the axis (remove the sign), offset in the range 0 to 2.
+    int x = (X & 0x3) - 1;
+    int y = (Y & 0x3) - 1;
+    int z = (Z & 0x3) - 1;
+    // compute the sign of Z (whether it needs to be inverted)
+    int axis_y = (z + 1) % 3;
+    int axis_z = (z + 2) % 3;
+    if (((x ^ axis_y) | (y ^ axis_z)) != 0) {
+      Z ^= 0x80;
     }
-    a[PITCH] = a[PITCH] - b[PITCH];
-    if (a[PITCH] < -90) {
-      a[PITCH] *= -1;
+    boolean sx = (X >= 0x80);
+    boolean sy = (Y >= 0x80);
+    boolean sz = (Z >= 0x80);
+    // Perform R * r, in avoiding actual muls and adds.
+    for (int j = 0; j < 3; j++) {
+      int offset = j * 3;
+      for (int i = 0; i < 3; i++) {
+        if (x == i) outR[offset + i] = sx ? -inR[offset + 0] : inR[offset + 0];
+        if (y == i) outR[offset + i] = sy ? -inR[offset + 1] : inR[offset + 1];
+        if (z == i) outR[offset + i] = sz ? -inR[offset + 2] : inR[offset + 2];
+      }
     }
-    return a;
+    return outR;
+  }
+
+  // Computes the device's orientation based on the rotation matrix.
+  // R should be double[9] array representing a rotation matrix
+  private float[] getOrientation(float[] R) {
+    // /  R[ 0]   R[ 1]   R[ 2]  \
+    // |  R[ 3]   R[ 4]   R[ 5]  |
+    // \  R[ 6]   R[ 7]   R[ 8]  /
+    float[] out = new float[2];
+    out[0] = (float) Math.toDegrees(Math.asin(R[7])); // pitch
+    out[1] = (float) Math.toDegrees(Math.atan2(-R[6], R[8])); // roll
+    return out;
+  }
+
+  // Apply a rotation about the roll axis to this rotation matrix.
+  // see http://planning.cs.uiuc.edu/node102.html
+  private float[] applyRollOffset(float roll, float[] matrixIn) {
+    float value = (float) Math.toRadians(roll);
+    float[] rotateMatrix = {
+        (float) Math.cos(value), 0, (float) Math.sin(value),
+        0, 1, 0,
+        (float) -Math.sin(value), 0, (float) Math.cos(value)
+    };
+    return matrixMultiply(matrixIn, rotateMatrix);
+  }
+
+  // Apply a rotation about the pitch axis to this rotation matrix.
+  // see http://planning.cs.uiuc.edu/node102.html
+  private float[] applyPitchOffset(float pitch, float[] matrixIn) {
+    float value = (float) Math.toRadians(pitch);
+    float[] rotateMatrix = {
+        1, 0, 0,
+        0, (float) Math.cos(value), (float) -Math.sin(value),
+        0, (float) Math.sin(value), (float) Math.cos(value)
+    };
+    return matrixMultiply(matrixIn, rotateMatrix);
+  }
+
+  // multiplies two rotation matrix, A and B
+  private float[] matrixMultiply(float[] A, float[] B) {
+    float[] result = new float[9];;
+    result[0] = A[0] * B[0] + A[1] * B[3] + A[2] * B[6];
+    result[1] = A[0] * B[1] + A[1] * B[4] + A[2] * B[7];
+    result[2] = A[0] * B[2] + A[1] * B[5] + A[2] * B[8];
+    result[3] = A[3] * B[0] + A[4] * B[3] + A[5] * B[6];
+    result[4] = A[3] * B[1] + A[4] * B[4] + A[5] * B[7];
+    result[5] = A[3] * B[2] + A[4] * B[5] + A[5] * B[8];
+    result[6] = A[6] * B[0] + A[7] * B[3] + A[8] * B[6];
+    result[7] = A[6] * B[1] + A[7] * B[4] + A[8] * B[7];
+    result[8] = A[6] * B[2] + A[7] * B[5] + A[8] * B[8];
+    return result;
   }
 
 }

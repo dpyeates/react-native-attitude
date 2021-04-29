@@ -5,17 +5,16 @@
 
 @interface RNAttitude : RCTEventEmitter <RCTBridgeModule> {
   // all angles are in degrees
-  bool inverseReferenceInUse;
-  long long nextSampleTime;
   long intervalMillis;
   long rotation;
-  CMQuaternion coreQuaternion;
-  CMQuaternion worldQuaternion;
-  CMQuaternion baseWorldQuaternion;
-  CMQuaternion inverseReferenceQuaternion;
+  double roll;
+  double pitch;
+  double pitchOffset;
+  double rollOffset;
+  double heading;
   CMMotionManager *motionManager;
   NSOperationQueue *attitudeQueue;
 }
 
 @end
-  
+
