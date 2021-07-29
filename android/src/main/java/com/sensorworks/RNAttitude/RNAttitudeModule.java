@@ -126,7 +126,7 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
     boolean shouldStart = isRunning;
     stopObserving();
     if(shouldStart) {
-      startObserving(null);
+      startObserving();
     }
   }
 
