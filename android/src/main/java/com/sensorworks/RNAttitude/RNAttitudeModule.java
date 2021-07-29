@@ -153,17 +153,14 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
   }
 
   @ReactMethod
-  public void startObserving(Promise promise) {
+  public void startObserving() {
     if (rotationSensor == null) {
-      promise.reject("-1", "Rotation vector sensor not available; will not provide orientation data.");
+      // Rotation vector sensor not available; will not provide orientation data
       return;
     }
     nextSampleTime = 0;
     sensorManager.registerListener(this, rotationSensor, intervalMillis * 1000);
     isRunning = true;
-    if(promise != null) {
-      promise.resolve(intervalMillis);
-    }
   }
 
   @ReactMethod
