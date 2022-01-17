@@ -9,29 +9,24 @@
 package com.sensorworks.RNAttitude;
 
 import android.content.Context;
-import android.os.SystemClock;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
-import android.hardware.SensorManager;
 import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
+import android.os.SystemClock;
 import android.util.Log;
 
-import java.util.Arrays;
-
-import com.facebook.react.bridge.ActivityEventListener;
+import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.LifecycleEventListener;
-import com.facebook.react.bridge.BaseActivityEventListener;
+import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
-import com.facebook.react.bridge.Promise;
-import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.ReactMethod;
-import com.facebook.react.bridge.ReadableMap;
 import com.facebook.react.bridge.WritableMap;
-import com.facebook.react.bridge.Callback;
 import com.facebook.react.module.annotations.ReactModule;
 import com.facebook.react.modules.core.DeviceEventManagerModule;
-import com.facebook.react.modules.core.RCTNativeAppEventEmitter;
+
+import java.util.Arrays;
 
 @ReactModule(name = RNAttitudeModule.NAME)
 public class RNAttitudeModule extends ReactContextBaseJavaModule implements LifecycleEventListener,
@@ -43,16 +38,23 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
   private static final byte ROTATE_LEFT = 1;
   private static final byte ROTATE_RIGHT = 2;
 
+  private static final byte OUTPUT_BOTH = 0;
+  private static final byte OUTPUT_ATTITUDE = 1;
+  private static final byte OUTPUT_HEADING = 2;
+
   private final ReactApplicationContext reactContext;
   private final Sensor rotationSensor;
   private final SensorManager sensorManager;
   private int intervalMillis;
   private long nextSampleTime;
   private long rotation;
+  private long output;
   private boolean isRunning;
   private float pitchOffset;
   private float rollOffset;
+  private float headingLast;
   private float[] eulerAngles = new float[2];
+  private float[] eulerAnglesLast = new float[2];
 
   public RNAttitudeModule(ReactApplicationContext reactContext) {
     super(reactContext);
@@ -64,6 +66,7 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
     intervalMillis = 200;
     nextSampleTime = 0;
     rotation = ROTATE_NONE;
+    output = OUTPUT_BOTH;
     pitchOffset = 0;
     rollOffset = 0;
   }
@@ -74,18 +77,19 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
   }
 
   @Override
-  public void onAccuracyChanged(Sensor sensor, int accuracy) {}
+  public void onAccuracyChanged(Sensor sensor, int accuracy) {
+  }
 
   @Override
   public void onHostResume() {
-    if(isRunning) {
+    if (isRunning) {
       sensorManager.registerListener(this, rotationSensor, intervalMillis * 1000);
     }
   }
 
   @Override
   public void onHostPause() {
-    if(isRunning) {
+    if (isRunning) {
       sensorManager.unregisterListener(this);
     }
   }
@@ -120,12 +124,38 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
   }
 
   @ReactMethod
-  // Sets the interval between event samples
-  public void setInterval(int interval) {
-    intervalMillis = interval;
+  // Sets the device rotation to either 'none', 'left' or 'right'
+  // If this isn't called then we assume 'portrait'/no rotation orientation
+  public void setOutput(String outputIn) {
+    String lowercaseOutput = outputIn.toLowerCase();
     boolean shouldStart = isRunning;
     stopObserving();
-    if(shouldStart) {
+    switch (lowercaseOutput) {
+      case "both":
+        output = OUTPUT_BOTH;
+        break;
+      case "attitude":
+        output = OUTPUT_ATTITUDE;
+        break;
+      case "heading":
+        output = OUTPUT_HEADING;
+        break;
+      default:
+        Log.e("ERROR", "Unrecognised output passed to react-native-attitude, must be 'both', 'attitude' or 'heading' only");
+        break;
+    }
+    if (shouldStart) {
+      startObserving();
+    }
+  }
+
+  @ReactMethod
+  // Sets the interval between event samples
+  public void setInterval(int interval) {
+    intervalMillis = interval >= 200 ? interval : 200; // cap to a max of 5Hz
+    boolean shouldStart = isRunning;
+    stopObserving();
+    if (shouldStart) {
       startObserving();
     }
   }
@@ -174,15 +204,16 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
 
   @Override
   public void onSensorChanged(SensorEvent sensorEvent) {
-    float[] rotationMatrix = new float[9];
-    float[] remappedMatrix = new float[9];
-    float[] orientation = new float[3];
-
     // Time to run?
     long currentTime = SystemClock.elapsedRealtime();
     if (currentTime < nextSampleTime) {
       return;
     }
+
+    float[] rotationMatrix = new float[9];
+    float[] remappedMatrix = new float[9];
+    float[] orientation = new float[3];
+    float heading = 0;
 
     // Get the current attitude value as a rotation matrix
     SensorManager.getRotationMatrixFromVector(rotationMatrix, getVectorFromSensorEvent(sensorEvent));
@@ -196,27 +227,41 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
       SensorManager.remapCoordinateSystem(rotationMatrix, SensorManager.AXIS_X, SensorManager.AXIS_Z, remappedMatrix);
     }
 
-    float heading = (float) ((Math.toDegrees(SensorManager.getOrientation(remappedMatrix, orientation)[0]) + 360) % 360);
-
-    // apply any pitch and roll offsets
-    if(pitchOffset != 0 || rollOffset != 0) {
-      float[] offsetMatrix = applyPitchOffset(pitchOffset, remappedMatrix);
-      offsetMatrix = applyRollOffset(rollOffset, offsetMatrix);
-      eulerAngles = getOrientation(offsetMatrix);
+    if (output == OUTPUT_BOTH || output == OUTPUT_ATTITUDE) {
+      // apply any pitch and roll offsets
+      if (pitchOffset != 0 || rollOffset != 0) {
+        float[] offsetMatrix = applyPitchOffset(pitchOffset, remappedMatrix);
+        offsetMatrix = applyRollOffset(rollOffset, offsetMatrix);
+        eulerAngles = getOrientation(offsetMatrix);
+      } else {
+        eulerAngles = getOrientation(remappedMatrix);
+      }
+      // round to 1 decimal place
+      eulerAngles[0] = Math.round(eulerAngles[0] * 10) / 00;
+      eulerAngles[1] = Math.round(eulerAngles[0] * 10) / 10;
+    } else {
+      eulerAngles[0] = 0;
+      eulerAngles[1] = 0;
     }
-    else {
-      eulerAngles = getOrientation(remappedMatrix);
+
+    if (output == OUTPUT_BOTH || output == OUTPUT_HEADING) {
+      heading = (float) Math.round(((Math.toDegrees(SensorManager.getOrientation(remappedMatrix, orientation)[0]) + 360) % 360));
     }
 
-    WritableMap map = Arguments.createMap();
-    map.putDouble("timestamp", sensorEvent.timestamp * NS2MS);
-    map.putDouble("roll", eulerAngles[1]);
-    map.putDouble("pitch", eulerAngles[0]);
-    map.putDouble("heading", heading);
-    try {
-      reactContext.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class).emit("attitudeUpdate", map);
-    } catch (RuntimeException e) {
-      Log.e("ERROR", "Error sending event over the React bridge");
+    if(eulerAngles[0] != eulerAnglesLast[0] || eulerAngles[1] != eulerAnglesLast[1] || heading != headingLast) {
+      WritableMap map = Arguments.createMap();
+      map.putDouble("timestamp", (sensorEvent.timestamp * NS2MS));
+      map.putDouble("roll", eulerAngles[1]);
+      map.putDouble("pitch", eulerAngles[0]);
+      map.putDouble("heading", heading);
+      try {
+        reactContext.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class).emit("attitudeUpdate", map);
+      } catch (RuntimeException e) {
+        Log.e("ERROR", "Error sending event over the React bridge");
+      }
+      eulerAnglesLast[0] = eulerAngles[0];
+      eulerAnglesLast[1] = eulerAngles[1];
+      headingLast = heading;
     }
 
     // Calculate the next time we should run
@@ -306,7 +351,7 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
 
   // multiplies two rotation matrix, A and B
   private float[] matrixMultiply(float[] A, float[] B) {
-    float[] result = new float[9];;
+    float[] result = new float[9];
     result[0] = A[0] * B[0] + A[1] * B[3] + A[2] * B[6];
     result[1] = A[0] * B[1] + A[1] * B[4] + A[2] * B[7];
     result[2] = A[0] * B[2] + A[1] * B[5] + A[2] * B[8];

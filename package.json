@@ -1,7 +1,7 @@
 {
   "name": "react-native-attitude",
   "title": "React Native Attitude",
-  "version": "2.1.3",
+  "version": "2.2.0",
   "description": "Obtain device attitude (roll, pitch and heading)",
   "main": "index.js",
   "scripts": {
@@ -29,13 +29,5 @@
   },
   "license": "MIT",
   "licenseFilename": "LICENSE",
-  "readmeFilename": "README.md",
-  "peerDependencies": {
-    "react": "*",
-    "react-native": "*"
-  },
-  "devDependencies": {
-    "react": "^16.8.3",
-    "react-native": "^0.59.10"
-  }
+  "readmeFilename": "README.md"
 }

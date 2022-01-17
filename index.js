@@ -7,7 +7,7 @@ let attitudeSubscriptions = [];
 let attitudeUpdatesEnabled = false;
 
 const Attitude = {
-  
+
   // Starts watching/observing of attitude
   // The success function is called upon every change
   watch: function(success) {
@@ -71,11 +71,16 @@ const Attitude = {
     return await RNAttitude.isSupported();
   },
 
+  // Sets the desired output to either 'heading', 'attitude' or 'both'
+  setOutput: function(output) {
+    RNAttitude.setOutput(output);
+  },
+
   // Sets the interval between event samples
   setInterval: function(interval) {
     RNAttitude.setInterval(interval);
   },
-  
+
   // Sets the device rotation to either 'none', 'left' or 'right'
   setRotation: function(rotation) {
     RNAttitude.setRotation(rotation);

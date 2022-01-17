@@ -40,15 +40,26 @@ RCT_EXPORT_MODULE();
   self = [super init];
   if (self) {
     intervalMillis = (int)(1000 / UPDATERATEHZ);
+    isRunning = FALSE;
     rotation = ROTATE_NONE;
     pitchOffset = 0;
     rollOffset = 0;
-    
+    roll = 0;
+    pitch = 0;
+    heading = 0;
+    output = kBoth;
+
+    // Allocate and initialize the location manager (used for magnetic heading only)
+    locationManager = [[CLLocationManager alloc] init];
+    [locationManager setDelegate:self];
+    [locationManager setDesiredAccuracy:kCLLocationAccuracyBest];
+    [locationManager setHeadingFilter: 1.0];
+
     // Allocate and initialize the motion manager.
     motionManager = [[CMMotionManager alloc] init];
     [motionManager setShowsDeviceMovementDisplay:YES];
     [motionManager setDeviceMotionUpdateInterval:intervalMillis * 0.001];
-    
+
     // Allocate and initialize the operation queue for attitude updates.
     attitudeQueue = [[NSOperationQueue alloc] init];
     [attitudeQueue setName:@"DeviceMotion"];
@@ -78,22 +89,42 @@ RCT_REMAP_METHOD(isSupported,
 // Basically it makes a new 'zero' position for both pitch and roll.
 RCT_EXPORT_METHOD(zero)
 {
-  self->pitchOffset = -self->pitch;
-  self->rollOffset = -self->roll;
+  pitchOffset = -pitch;
+  rollOffset = -roll;
 }
 
 // Resets the pitch and roll offsets
 RCT_EXPORT_METHOD(reset)
 {
-  self->pitchOffset = 0;
-  self->rollOffset = 0;
+  pitchOffset = 0;
+  rollOffset = 0;
+}
+
+// Sets the interval between event samples
+RCT_EXPORT_METHOD(setOutput:(NSString *)outputIn)
+{
+  NSString *lowercaseOutput = [outputIn lowercaseString];
+  bool shouldStart = isRunning;
+  [self stopObserving];
+  if([lowercaseOutput isEqualToString:@"both"]) {
+    output = kBoth;
+  } else if([lowercaseOutput isEqualToString:@"attitude"]) {
+    output = kAttitude;
+  } else if([lowercaseOutput isEqualToString:@"heading"]) {
+    output = kHeading;
+  } else {
+    NSLog( @"Unrecognised output passed to react-native-attitude, must be 'both', 'attitude' or 'heading' only");
+  }
+  if(shouldStart) {
+    [self startObserving];
+  }
 }
 
 // Sets the interval between event samples
 RCT_EXPORT_METHOD(setInterval:(NSInteger)interval)
 {
-  self->intervalMillis = interval;
-  bool shouldStart = motionManager.isDeviceMotionActive;
+  self->intervalMillis = interval >= 200 ? interval : 200; // cap to a max of 5Hz
+  bool shouldStart = isRunning;
   [self stopObserving];
   [motionManager setDeviceMotionUpdateInterval:intervalMillis * 0.001];
   if(shouldStart) {
@@ -108,10 +139,13 @@ RCT_EXPORT_METHOD(setRotation:(NSString *)rotation)
   NSString *lowercaseRotation = [rotation lowercaseString];
   if([lowercaseRotation isEqualToString:@"none"]) {
     self->rotation = ROTATE_NONE;
+    [locationManager setHeadingOrientation:CLDeviceOrientationPortrait];
   } else if([lowercaseRotation isEqualToString:@"left"]) {
     self->rotation = ROTATE_LEFT;
+    [locationManager setHeadingOrientation:CLDeviceOrientationLandscapeLeft];
   } else if([lowercaseRotation isEqualToString:@"right"]) {
     self->rotation = ROTATE_RIGHT;
+    [locationManager setHeadingOrientation:CLDeviceOrientationLandscapeRight];
   } else {
     NSLog( @"Unrecognised rotation passed to react-native-attitude, must be 'none','left' or 'right' only");
   }
@@ -119,76 +153,106 @@ RCT_EXPORT_METHOD(setRotation:(NSString *)rotation)
 }
 
 RCT_EXPORT_METHOD(startObserving) {
-  if(!motionManager.isDeviceMotionActive) {
-    
-    // the attitude update handler
-    CMDeviceMotionHandler attitudeHandler = ^(CMDeviceMotion * _Nullable motion, NSError * _Nullable error)
-    {
-      double rotationMatrix[9], remappedMatrix[9];
-      
-      // Get the current attitude values
-      CMAttitude *currentAttitude = self->motionManager.deviceMotion.attitude;
-      
-      // convert to a float array rotation matrix
-      CMRotationMatrixToFloatArray(currentAttitude.rotationMatrix, rotationMatrix);
-      
-      // Remap the coordinate system depending on screen orientation
-      if (self->rotation == ROTATE_LEFT) {
-        remapCoordinateSystem(rotationMatrix, AXIS_Z, AXIS_MINUS_X, remappedMatrix);
-      } else if (self->rotation == ROTATE_RIGHT) {
-        remapCoordinateSystem(rotationMatrix, AXIS_MINUS_Z, AXIS_X, remappedMatrix);
-      } else {
-        remapCoordinateSystem(rotationMatrix, AXIS_X, AXIS_Z, remappedMatrix);
-      }
-      
-      // apply any pitch and roll offsets
-      if(self->pitchOffset != 0 || self->rollOffset != 0) {
-        double offsetMatrix1[9], offsetMatrix2[9];
-        applyPitchOffset(self->pitchOffset, remappedMatrix, offsetMatrix1);
-        applyRollOffset(self->rollOffset, offsetMatrix1, offsetMatrix2);
-        getOrientation(offsetMatrix2, &self->pitch, &self->roll);
-      }
-      else {
-        getOrientation(remappedMatrix, &self->pitch, &self->roll);
-      }
-      
-      // Get the current heading
-      if (@available(iOS 11.0, *)) {
-        self->heading = self->motionManager.deviceMotion.heading;
-      } else {
-        self->heading = 0;
-      }
-      
-      // Send change events to the Javascript side via the React Native bridge
-      @try {
-        [self sendEventWithName:@"attitudeUpdate"
-                           body:@{
-                             @"timestamp" : @((long long)([[NSDate date] timeIntervalSince1970] * 1000.0)),
-                             @"roll" : @(self->roll),
-                             @"pitch": @(self->pitch),
-                             @"heading": @(self->heading),
-                           }
-         ];
-      }
-      @catch ( NSException *e ) {
-        NSLog( @"Error sending event over the React bridge");
-      }
-    };
-    
-    [motionManager startDeviceMotionUpdatesUsingReferenceFrame:CMAttitudeReferenceFrameXMagneticNorthZVertical toQueue:attitudeQueue withHandler:attitudeHandler];
+  if(output == kBoth || output == kAttitude) {
+    if(!motionManager.isDeviceMotionActive) {
+
+      // the attitude update handler
+      CMDeviceMotionHandler attitudeHandler = ^(CMDeviceMotion * _Nullable motion, NSError * _Nullable error)
+      {
+        double rotationMatrix[9], remappedMatrix[9];
+
+        // Get the current attitude values
+        CMAttitude *currentAttitude = self->motionManager.deviceMotion.attitude;
+
+        // convert to a float array rotation matrix
+        CMRotationMatrixToFloatArray(currentAttitude.rotationMatrix, rotationMatrix);
+
+        // Remap the coordinate system depending on screen orientation
+        if (self->rotation == ROTATE_LEFT) {
+          remapCoordinateSystem(rotationMatrix, AXIS_Z, AXIS_MINUS_X, remappedMatrix);
+        } else if (self->rotation == ROTATE_RIGHT) {
+          remapCoordinateSystem(rotationMatrix, AXIS_MINUS_Z, AXIS_X, remappedMatrix);
+        } else {
+          remapCoordinateSystem(rotationMatrix, AXIS_X, AXIS_Z, remappedMatrix);
+        }
+
+        // apply any pitch and roll offsets
+        double r, p;
+        if(self->pitchOffset != 0 || self->rollOffset != 0) {
+          double offsetMatrix1[9], offsetMatrix2[9];
+          applyPitchOffset(self->pitchOffset, remappedMatrix, offsetMatrix1);
+          applyRollOffset(self->rollOffset, offsetMatrix1, offsetMatrix2);
+          getOrientation(offsetMatrix2, &p, &r);
+        }
+        else {
+          getOrientation(remappedMatrix, &p, &r);
+        }
+
+        // round to 1 decimal place
+        self->roll = round(r * 10) / 10.0;
+        self->pitch = round(p * 10) / 10.0;
+
+        [self sendOverBridge];
+      };
+
+      [motionManager startDeviceMotionUpdatesUsingReferenceFrame:CMAttitudeReferenceFrameXMagneticNorthZVertical toQueue:attitudeQueue withHandler:attitudeHandler];
+    }
   }
+  else {
+    [motionManager stopDeviceMotionUpdates];
+    roll = 0;
+    pitch = 0;
+  }
+
+  if(output == kBoth || output == kHeading) {
+    [locationManager startUpdatingHeading];
+  } else {
+    [locationManager stopUpdatingHeading];
+    heading = 0;
+  }
+
+  isRunning = TRUE;
 }
 
 RCT_EXPORT_METHOD(stopObserving) {
-  if(motionManager.isDeviceMotionActive) {
-    [motionManager stopDeviceMotionUpdates];
-  }
+  [motionManager stopDeviceMotionUpdates];
+  [locationManager stopUpdatingHeading];
+  roll = 0;
+  pitch = 0;
+  heading = 0;
+  isRunning = FALSE;
 }
 
 //------------------------------------------------------------------------------------------------
 // Internal methods
 
 #pragma mark - Private methods
+
+// Location manager heading delegate
+- (void)locationManager:(CLLocationManager*)manager
+       didUpdateHeading:(CLHeading*)newHeading {
+  heading = roundf(newHeading.magneticHeading);
+  if(output == kHeading) {
+    [self sendOverBridge];
+  }
+}
+
+// Send change events to the Javascript side via the React Native bridge
+-(void)sendOverBridge {
+  @try {
+    [self sendEventWithName:@"attitudeUpdate"
+                       body:@{
+                         @"timestamp" : @((long long)([[NSDate date] timeIntervalSince1970] * 1000.0)),
+                         @"roll" : @(roll),
+                         @"pitch": @(pitch),
+                         @"heading": @(heading),
+                       }
+     ];
+  }
+  @catch ( NSException *e ) {
+    NSLog( @"Error sending event over the React bridge");
+  }
+}
 
 // Rotates the supplied rotation matrix so it is expressed in a different coordinate system.
 void remapCoordinateSystem(double inR[], int X, int Y, double outR[]) {
