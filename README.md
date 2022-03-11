@@ -101,7 +101,7 @@ protected List<ReactPackage> getPackages() {
 
 import Attitude from 'react-native-attitude';
 
-Attitude.watch((payload => {});
+Attitude.watch((payload) => {});
 
 ```
 
