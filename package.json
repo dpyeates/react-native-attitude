@@ -1,7 +1,7 @@
 {
   "name": "react-native-attitude",
   "title": "React Native Attitude",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "Obtain device attitude (roll, pitch and heading)",
   "main": "index.js",
   "scripts": {
