@@ -237,7 +237,7 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
         eulerAngles = getOrientation(remappedMatrix);
       }
       // round to 1 decimal place
-      eulerAngles[0] = Math.round(eulerAngles[0] * 10) / 00;
+      eulerAngles[0] = Math.round(eulerAngles[0] * 10) / 10;
       eulerAngles[1] = Math.round(eulerAngles[0] * 10) / 10;
     } else {
       eulerAngles[0] = 0;
