@@ -102,6 +102,13 @@ public class RNAttitudeModule extends ReactContextBaseJavaModule implements Life
   //------------------------------------------------------------------------------------------------
   // React interface
 
+  // Required for RN built in EventEmitter Calls.
+  @ReactMethod
+  public void addListener(String eventName) {}
+
+  @ReactMethod
+  public void removeListeners(Integer count) {}
+
   @ReactMethod
   // Determines if this device is capable of providing attitude updates
   public void isSupported(Promise promise) {
