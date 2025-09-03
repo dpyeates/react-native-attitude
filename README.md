@@ -1,6 +1,10 @@
   
 # react-native-attitude
 
+** THIS MODULE IS NO LONGER MAINTAINED **
+
+PLEASE USE MY NEW MODULE [react-native-ahrs](https://github.com/dpyeates/react-native-ahrs)
+
 This module provides device attitude (Roll, Pitch & Heading) in degrees for iOS and Android.<br/>
 It uses a reference frame that assumes the user is looking 'through' the screen - typical to many augmented reality applications.<br/>
 It uses Core Motion Quaternions on iOS and the Rotation Vector sensor on Android.
