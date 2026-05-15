@@ -6,21 +6,18 @@ Pod::Spec.new do |s|
   s.name         = "react-native-attitude"
   s.version      = package["version"]
   s.summary      = package["description"]
-  s.description  = <<-DESC
-                  react-native-barometer
-                   DESC
-  s.homepage     = "https://github.com/dpyeates/react-native-attitude"
-  s.license      = "MIT"
-  # s.license    = { :type => "MIT", :file => "FILE_LICENSE" }
-  s.authors      = { "Darren Yeates" => "apps@sensorworks.co.uk" }
-  s.platforms    = { :ios => "11.0", :tvos => "10.0" }
-  s.source       = { :git => "https://github.com/dpyeates/react-native-attitude.git", :tag => "#{s.version}" }
+  s.description  = package["description"]
+  s.homepage     = package["homepage"]
+  s.license      = package["license"]
+  s.authors      = package.dig("author", "name") || "Darren Yeates"
 
-  s.source_files = "ios/**/*.{h,m,swift}"
-  s.requires_arc = true
+  s.platforms    = { :ios => min_ios_version_supported }
+  s.source       = { :git => package["repository"]["url"].sub(/^git\+/, "").sub(/\.git$/, ""), :tag => "#{s.version}" }
 
-  s.dependency "React-Core"
-  
-  # s.dependency "..."
+  s.source_files = "ios/**/*.{h,m,mm,swift,cpp}"
+  s.private_header_files = "ios/**/*.h"
+
+  s.frameworks = "CoreMotion", "CoreLocation"
+
+  install_modules_dependencies(s)
 end
-

@@ -1,30 +1,13 @@
-
-#import <React/RCTBridgeModule.h>
-#import <React/RCTEventEmitter.h>
-#import <CoreMotion/CoreMotion.h>
 #import <CoreLocation/CoreLocation.h>
+#import <CoreMotion/CoreMotion.h>
+#import <RNAttitudeSpec/RNAttitudeSpec.h>
 
-typedef NS_ENUM(NSUInteger, Output) {
-  kHeading,
-  kAttitude,
-  kBoth
+typedef NS_ENUM(NSUInteger, RNAttitudeOutput) {
+  RNAttitudeOutputHeading,
+  RNAttitudeOutputAttitude,
+  RNAttitudeOutputBoth,
 };
 
-@interface RNAttitude : RCTEventEmitter <RCTBridgeModule> {
-  // all angles are in degrees
-  Boolean isRunning;
-  long intervalMillis;
-  long rotation;
-  double roll;
-  double pitch;
-  double pitchOffset;
-  double rollOffset;
-  double heading;
-  Output output;
-  CLLocationManager *locationManager;
-  CMMotionManager *motionManager;
-  NSOperationQueue *attitudeQueue;
-}
+@interface RNAttitude : NativeRNAttitudeSpecBase <NativeRNAttitudeSpec, CLLocationManagerDelegate>
 
 @end
-

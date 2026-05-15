@@ -1,0 +1,28 @@
+import type { CodegenTypes, TurboModule } from 'react-native';
+import { TurboModuleRegistry } from 'react-native';
+
+export type AttitudePayload = {
+  timestamp: number;
+  roll: number;
+  pitch: number;
+  heading: number;
+};
+
+export interface Spec extends TurboModule {
+  readonly onAttitudeUpdate: CodegenTypes.EventEmitter<AttitudePayload>;
+  zero(): void;
+  reset(): void;
+  setOutput(output: string): void;
+  setInterval(interval: number): void;
+  setRotation(rotation: string): void;
+  startObserving(): void;
+  stopObserving(): void;
+  isSupported(): Promise<boolean>;
+  addListener(eventName: string): void;
+  removeListeners(count: number): void;
+}
+
+/** Resolve lazily — top-level getEnforcing breaks AppRegistry when Turbo runtime is not ready yet. */
+export function getNativeRNAttitude(): Spec {
+  return TurboModuleRegistry.getEnforcing<Spec>('RNAttitude');
+}

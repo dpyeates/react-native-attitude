@@ -1,54 +1,64 @@
-
 buildscript {
-    repositories {
-        google()
-        jcenter()
+  ext.RNAttitude = [
+    kotlinVersion: "2.0.21",
+    minSdkVersion: 24,
+    compileSdkVersion: 36,
+    targetSdkVersion: 36
+  ]
+
+  ext.getExtOrDefault = { prop ->
+    if (rootProject.ext.has(prop)) {
+      return rootProject.ext.get(prop)
     }
 
-    dependencies {
-       classpath 'com.android.tools.build:gradle:4.1.3'
-    }
+    return RNAttitude[prop]
+  }
+
+  repositories {
+    google()
+    mavenCentral()
+  }
+
+  dependencies {
+    classpath "com.android.tools.build:gradle:8.7.2"
+    classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:${getExtOrDefault('kotlinVersion')}"
+  }
 }
 
-apply plugin: 'com.android.library'
-
-def safeExtGet(prop, fallback) {
-    rootProject.ext.has(prop) ? rootProject.ext.get(prop) : fallback
-}
-
-def DEFAULT_COMPILE_SDK_VERSION = 28
-def DEFAULT_BUILD_TOOLS_VERSION = "28.0.3"
-def DEFAULT_MIN_SDK_VERSION = 16
-def DEFAULT_TARGET_SDK_VERSION = 28
+apply plugin: "com.android.library"
+apply plugin: "kotlin-android"
+apply plugin: "com.facebook.react"
 
 android {
-    compileSdkVersion safeExtGet('compileSdkVersion', DEFAULT_COMPILE_SDK_VERSION)
-    buildToolsVersion safeExtGet('buildToolsVersion', DEFAULT_BUILD_TOOLS_VERSION)
+  namespace "com.sensorworks.rnattitude"
 
-    defaultConfig {
-        minSdkVersion safeExtGet('minSdkVersion', DEFAULT_MIN_SDK_VERSION)
-        targetSdkVersion safeExtGet('targetSdkVersion', DEFAULT_TARGET_SDK_VERSION)
-        versionCode 1
-        versionName "1.0"
-    }
-    lintOptions {
-        abortOnError false
-    }
-}
+  compileSdkVersion getExtOrDefault("compileSdkVersion")
 
-repositories {
-    maven {
-        // All of React Native (JS, Obj-C sources, Android binaries) is installed from npm
-        url "$rootDir/../node_modules/react-native/android"
+  defaultConfig {
+    minSdkVersion getExtOrDefault("minSdkVersion")
+    targetSdkVersion getExtOrDefault("targetSdkVersion")
+  }
+
+  buildFeatures {
+    buildConfig true
+  }
+
+  buildTypes {
+    release {
+      minifyEnabled false
     }
-    mavenCentral()
-    mavenLocal()
-    google()
-    jcenter()
+  }
+
+  lint {
+    disable "GradleCompatible"
+  }
+
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_1_8
+    targetCompatibility JavaVersion.VERSION_1_8
+  }
 }
 
 dependencies {
-    //noinspection GradleDynamicVersion
-    implementation 'com.facebook.react:react-native:+'
+  implementation "com.facebook.react:react-android"
 }
-
