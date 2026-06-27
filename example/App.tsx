@@ -1,18 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
-import Attitude, { type AttitudePayload } from 'react-native-attitude';
+import Attitude, { type AttitudePayload, type UpdateRateHz } from 'react-native-attitude';
 
-const DEFAULT_RATE_MS = 200;
+const DEFAULT_RATE_HZ: UpdateRateHz = 5;
 const PITCH_PX_PER_DEG = 4;
 
-const RATES = [
-  { label: '1 Hz', ms: 1000 },
-  { label: '5 Hz', ms: 200 },
-  { label: '10 Hz', ms: 100 },
-  { label: '20 Hz', ms: 50 },
-  { label: '40 Hz', ms: 25 },
-] as const;
+const RATES: { label: string; hz: UpdateRateHz }[] = [
+  { label: '1 Hz', hz: 1 },
+  { label: '5 Hz', hz: 5 },
+  { label: '10 Hz', hz: 10 },
+  { label: '20 Hz', hz: 20 },
+  { label: '40 Hz', hz: 40 },
+];
 
 const INITIAL: AttitudePayload = {
   timestamp: 0,
@@ -57,13 +57,13 @@ function Metric({ label, value }: { label: string; value: string }) {
 export default function App() {
   const [supported, setSupported] = useState<boolean | null>(null);
   const [data, setData] = useState(INITIAL);
-  const [rateMs, setRateMs] = useState(DEFAULT_RATE_MS);
+  const [rateHz, setRateHz] = useState<UpdateRateHz>(DEFAULT_RATE_HZ);
   const watchId = useRef<number | null>(null);
 
   useEffect(() => {
     Attitude.setOutput('both');
     Attitude.setRotation('none');
-    Attitude.setInterval(rateMs);
+    Attitude.setInterval(rateHz);
     void Attitude.isSupported().then(setSupported);
 
     watchId.current = Attitude.watch(setData);
@@ -77,8 +77,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    Attitude.setInterval(rateMs);
-  }, [rateMs]);
+    Attitude.setInterval(rateHz);
+  }, [rateHz]);
 
   return (
     <SafeAreaProvider>
@@ -110,13 +110,13 @@ export default function App() {
 
           <Text style={styles.sectionLabel}>Update rate</Text>
           <View style={styles.rateRow}>
-            {RATES.map(({ label, ms }) => {
-              const selected = rateMs === ms;
+            {RATES.map(({ label, hz }) => {
+              const selected = rateHz === hz;
               return (
                 <Pressable
-                  key={ms}
+                  key={hz}
                   style={[styles.chip, selected && styles.chipSelected]}
-                  onPress={() => setRateMs(ms)}
+                  onPress={() => setRateHz(hz)}
                 >
                   <Text style={[styles.chipLabel, selected && styles.chipLabelSelected]}>
                     {label}

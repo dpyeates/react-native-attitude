@@ -4,6 +4,7 @@
 #import <math.h>
 
 #define UPDATERATEHZ 5
+#define HEARTBEAT_INTERVAL_MS 1000
 #define DEGTORAD 0.017453292
 #define RADTODEG 57.29577951
 
@@ -24,6 +25,7 @@ static void applyRollOffset(double roll, double matrixIn[], double matrixOut[]);
 static void applyPitchOffset(double pitch, double matrixIn[], double matrixOut[]);
 static void matrixMultiply(double A[], double B[], double result[]);
 static void CMRotationMatrixToFloatArray(CMRotationMatrix rotIn, double rotOut[]);
+static NSInteger intervalMillisForInterval(double interval);
 
 @implementation RNAttitude {
   BOOL isRunning;
@@ -42,10 +44,12 @@ static void CMRotationMatrixToFloatArray(CMRotationMatrix rotIn, double rotOut[]
   id backgroundObserver;
   id foregroundObserver;
   long long nextEmitTimeMs;
+  long long lastEmitTimeMs;
   double lastEmittedRoll;
   double lastEmittedPitch;
   double lastEmittedHeading;
   BOOL hasEmittedSample;
+  NSTimer *heartbeatTimer;
 }
 
 - (instancetype)init
@@ -62,7 +66,9 @@ static void CMRotationMatrixToFloatArray(CMRotationMatrix rotIn, double rotOut[]
     output = RNAttitudeOutputBoth;
     wasRunningBeforeBackground = NO;
     nextEmitTimeMs = 0;
+    lastEmitTimeMs = 0;
     hasEmittedSample = NO;
+    heartbeatTimer = nil;
 
     locationManager = [[CLLocationManager alloc] init];
     locationManager.delegate = self;
@@ -96,6 +102,7 @@ static void CMRotationMatrixToFloatArray(CMRotationMatrix rotIn, double rotOut[]
 
 - (void)dealloc
 {
+  [self stopHeartbeatTimer];
   NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
   if (backgroundObserver != nil) {
     [center removeObserver:backgroundObserver];
@@ -178,9 +185,10 @@ static void CMRotationMatrixToFloatArray(CMRotationMatrix rotIn, double rotOut[]
 
 - (void)setInterval:(double)interval
 {
-  intervalMillis = interval >= 25 ? (NSInteger)interval : 25;
+  intervalMillis = intervalMillisForInterval(interval);
   @synchronized(self) {
     nextEmitTimeMs = 0;
+    lastEmitTimeMs = 0;
     hasEmittedSample = NO;
   }
   BOOL shouldStart = isRunning;
@@ -213,6 +221,7 @@ static void CMRotationMatrixToFloatArray(CMRotationMatrix rotIn, double rotOut[]
 {
   @synchronized(self) {
     nextEmitTimeMs = 0;
+    lastEmitTimeMs = 0;
     hasEmittedSample = NO;
   }
   motionManager.deviceMotionUpdateInterval = intervalMillis * 0.001;
@@ -263,16 +272,42 @@ static void CMRotationMatrixToFloatArray(CMRotationMatrix rotIn, double rotOut[]
 
   if (output == RNAttitudeOutputBoth || output == RNAttitudeOutputHeading) {
     [locationManager startUpdatingHeading];
+    [self startHeartbeatTimer];
   } else {
     [locationManager stopUpdatingHeading];
     heading = 0;
+    [self stopHeartbeatTimer];
   }
 
   isRunning = YES;
 }
 
+- (void)startHeartbeatTimer
+{
+  [self stopHeartbeatTimer];
+  if (output != RNAttitudeOutputBoth && output != RNAttitudeOutputHeading) {
+    return;
+  }
+  __weak RNAttitude *weakSelf = self;
+  heartbeatTimer = [NSTimer scheduledTimerWithTimeInterval:HEARTBEAT_INTERVAL_MS * 0.001
+                                                   repeats:YES
+                                                     block:^(__unused NSTimer *timer) {
+                                                       RNAttitude *strongSelf = weakSelf;
+                                                       if (strongSelf != nil && strongSelf->isRunning) {
+                                                         [strongSelf emitAttitudeUpdate];
+                                                       }
+                                                     }];
+}
+
+- (void)stopHeartbeatTimer
+{
+  [heartbeatTimer invalidate];
+  heartbeatTimer = nil;
+}
+
 - (void)stopObserving
 {
+  [self stopHeartbeatTimer];
   [motionManager stopDeviceMotionUpdates];
   [locationManager stopUpdatingHeading];
   roll = 0;
@@ -282,6 +317,7 @@ static void CMRotationMatrixToFloatArray(CMRotationMatrix rotIn, double rotOut[]
   @synchronized(self) {
     hasEmittedSample = NO;
     nextEmitTimeMs = 0;
+    lastEmitTimeMs = 0;
   }
 }
 
@@ -309,9 +345,14 @@ static void CMRotationMatrixToFloatArray(CMRotationMatrix rotIn, double rotOut[]
   @synchronized(self) {
     BOOL changed = !hasEmittedSample || roll != lastEmittedRoll ||
         pitch != lastEmittedPitch || heading != lastEmittedHeading;
-    BOOL rateLimited = nowMs < nextEmitTimeMs;
-    if (changed && !rateLimited) {
-      nextEmitTimeMs = nowMs + intervalMillis;
+    BOOL rateLimited = changed && (nowMs < nextEmitTimeMs);
+    BOOL heartbeatDue = hasEmittedSample && !changed &&
+        (nowMs >= lastEmitTimeMs + HEARTBEAT_INTERVAL_MS);
+    if ((changed && !rateLimited) || heartbeatDue) {
+      if (changed) {
+        nextEmitTimeMs = nowMs + intervalMillis;
+      }
+      lastEmitTimeMs = nowMs;
       lastEmittedRoll = roll;
       lastEmittedPitch = pitch;
       lastEmittedHeading = heading;
@@ -333,6 +374,20 @@ static void CMRotationMatrixToFloatArray(CMRotationMatrix rotIn, double rotOut[]
 }
 
 @end
+
+static NSInteger intervalMillisForInterval(double interval)
+{
+  switch ((NSInteger)interval) {
+    case 1000:
+    case 200:
+    case 100:
+    case 50:
+    case 25:
+      return (NSInteger)interval;
+    default:
+      return 200;
+  }
+}
 
 static void remapCoordinateSystem(double inR[], int X, int Y, double outR[])
 {

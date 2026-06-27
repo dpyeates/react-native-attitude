@@ -28,6 +28,7 @@ class RNAttitudeModule(reactContext: ReactApplicationContext) :
 
   private var intervalMillis = 200
   private var nextSampleTime = 0L
+  private var lastEmitTimeMs = 0L
   private var rotation = ROTATE_NONE
   private var output = OUTPUT_BOTH
   private var isRunning = false
@@ -84,8 +85,9 @@ class RNAttitudeModule(reactContext: ReactApplicationContext) :
   }
 
   override fun setInterval(interval: Double) {
-    intervalMillis = if (interval >= 25) interval.toInt() else 25
+    intervalMillis = intervalMillisFor(interval)
     nextSampleTime = 0L
+    lastEmitTimeMs = 0L
     val shouldStart = isRunning
     stopObserving()
     if (shouldStart) {
@@ -115,6 +117,7 @@ class RNAttitudeModule(reactContext: ReactApplicationContext) :
       return
     }
     nextSampleTime = 0L
+    lastEmitTimeMs = 0L
     val samplingUs = samplingPeriodUs()
     sensorManager.registerListener(this, rotationSensor, samplingUs, samplingUs)
     isRunning = true
@@ -128,6 +131,7 @@ class RNAttitudeModule(reactContext: ReactApplicationContext) :
     eulerAnglesLast[0] = Float.NaN
     eulerAnglesLast[1] = Float.NaN
     headingLast = Float.NaN
+    lastEmitTimeMs = 0L
   }
 
   override fun addListener(eventName: String) {}
@@ -211,26 +215,42 @@ class RNAttitudeModule(reactContext: ReactApplicationContext) :
       heading = round(((Math.toDegrees(azimuth.toDouble()) + 360) % 360)).toFloat()
     }
 
-    if (
-      eulerAngles[0] != eulerAnglesLast[0] ||
+    val nowMs = System.currentTimeMillis()
+    val changed =
+      eulerAnglesLast[0].isNaN() ||
+        eulerAngles[0] != eulerAnglesLast[0] ||
         eulerAngles[1] != eulerAnglesLast[1] ||
         heading != headingLast
-    ) {
+    val heartbeatDue =
+      !changed &&
+        lastEmitTimeMs > 0 &&
+        nowMs - lastEmitTimeMs >= HEARTBEAT_INTERVAL_MS
+
+    if (changed || heartbeatDue) {
       val map: WritableMap =
         Arguments.createMap().apply {
-          putDouble("timestamp", System.currentTimeMillis().toDouble())
+          putDouble("timestamp", nowMs.toDouble())
           putDouble("roll", eulerAngles[1].toDouble())
           putDouble("pitch", eulerAngles[0].toDouble())
           putDouble("heading", heading.toDouble())
         }
       emitOnAttitudeUpdate(map)
-      eulerAnglesLast[0] = eulerAngles[0]
-      eulerAnglesLast[1] = eulerAngles[1]
-      headingLast = heading
+      lastEmitTimeMs = nowMs
+      if (changed) {
+        eulerAnglesLast[0] = eulerAngles[0]
+        eulerAnglesLast[1] = eulerAngles[1]
+        headingLast = heading
+      }
     }
 
     nextSampleTime = currentTime + intervalMillis
   }
+
+  private fun intervalMillisFor(interval: Double): Int =
+    when (interval.toInt()) {
+      1000, 200, 100, 50, 25 -> interval.toInt()
+      else -> 200
+    }
 
   private fun samplingPeriodUs(): Int {
     val sensor = rotationSensor ?: return intervalMillis * 1000
@@ -315,6 +335,7 @@ class RNAttitudeModule(reactContext: ReactApplicationContext) :
   companion object {
     const val NAME = NativeRNAttitudeSpec.NAME
     private const val TAG = "RNAttitude"
+    private const val HEARTBEAT_INTERVAL_MS = 1000L
     private const val ROTATE_NONE = 0
     private const val ROTATE_LEFT = 1
     private const val ROTATE_RIGHT = 2

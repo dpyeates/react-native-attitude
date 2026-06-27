@@ -8,6 +8,15 @@ import {
 export type { AttitudePayload };
 export type OutputMode = 'both' | 'attitude' | 'heading';
 export type RotationMode = 'none' | 'left' | 'right';
+export type UpdateRateHz = 1 | 5 | 10 | 20 | 40;
+
+const RATE_MS: Record<UpdateRateHz, number> = {
+  1: 1000,
+  5: 200,
+  10: 100,
+  20: 50,
+  40: 25,
+};
 
 type WatchCallback = (payload: AttitudePayload) => void;
 
@@ -72,8 +81,8 @@ const Attitude = {
     getNativeModule().setOutput(output);
   },
 
-  setInterval(interval: number): void {
-    getNativeModule().setInterval(interval);
+  setInterval(rateHz: UpdateRateHz): void {
+    getNativeModule().setInterval(RATE_MS[rateHz]);
   },
 
   setRotation(rotation: RotationMode): void {

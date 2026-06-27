@@ -4,7 +4,7 @@
 
 - **Roll** and **pitch** in degrees (for horizon/level style UIs)
 - **Heading** in degrees (0-360)
-- Configurable update interval (`1Hz` to `40Hz` in the example app)
+- Configurable update rate: 1, 5, 10, 20, or 40 Hz; unchanged values are re-sent at 1 Hz minimum
 - Runtime controls for `zero()` and `reset()` calibration
 
 The module is designed for sensor-driven experiences such as camera overlays, horizon indicators, motion dashboards, and instrumentation UIs where low-latency orientation updates matter.
@@ -44,7 +44,7 @@ const watchId = Attitude.watch((payload) => {
   // payload.heading   — degrees, 0 to 360
 });
 
-Attitude.setInterval(500);       // minimum 25 ms (~40 Hz max)
+Attitude.setInterval(5);         // 1 | 5 | 10 | 20 | 40 (Hz)
 Attitude.setRotation('none');    // 'none' | 'left' | 'right'
 Attitude.setOutput('both');      // 'both' | 'attitude' | 'heading'
 Attitude.zero();
