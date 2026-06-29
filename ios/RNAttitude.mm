@@ -49,7 +49,8 @@ static NSInteger intervalMillisForInterval(double interval);
   double lastEmittedPitch;
   double lastEmittedHeading;
   BOOL hasEmittedSample;
-  NSTimer *heartbeatTimer;
+  dispatch_source_t heartbeatSource;
+  dispatch_queue_t heartbeatQueue;
 }
 
 - (instancetype)init
@@ -68,7 +69,8 @@ static NSInteger intervalMillisForInterval(double interval);
     nextEmitTimeMs = 0;
     lastEmitTimeMs = 0;
     hasEmittedSample = NO;
-    heartbeatTimer = nil;
+    heartbeatSource = nil;
+    heartbeatQueue = dispatch_queue_create("com.sensorworks.rnattitude.heartbeat", DISPATCH_QUEUE_SERIAL);
 
     locationManager = [[CLLocationManager alloc] init];
     locationManager.delegate = self;
@@ -272,37 +274,48 @@ static NSInteger intervalMillisForInterval(double interval);
 
   if (output == RNAttitudeOutputBoth || output == RNAttitudeOutputHeading) {
     [locationManager startUpdatingHeading];
-    [self startHeartbeatTimer];
   } else {
     [locationManager stopUpdatingHeading];
     heading = 0;
-    [self stopHeartbeatTimer];
   }
 
   isRunning = YES;
+  [self startHeartbeatTimer];
 }
 
 - (void)startHeartbeatTimer
 {
   [self stopHeartbeatTimer];
-  if (output != RNAttitudeOutputBoth && output != RNAttitudeOutputHeading) {
-    return;
-  }
+
+  uint64_t intervalNs = (uint64_t)HEARTBEAT_INTERVAL_MS * NSEC_PER_MSEC;
+  heartbeatSource = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, heartbeatQueue);
+  dispatch_source_set_timer(
+      heartbeatSource,
+      dispatch_time(DISPATCH_TIME_NOW, intervalNs),
+      intervalNs,
+      100 * NSEC_PER_MSEC);
   __weak RNAttitude *weakSelf = self;
-  heartbeatTimer = [NSTimer scheduledTimerWithTimeInterval:HEARTBEAT_INTERVAL_MS * 0.001
-                                                   repeats:YES
-                                                     block:^(__unused NSTimer *timer) {
-                                                       RNAttitude *strongSelf = weakSelf;
-                                                       if (strongSelf != nil && strongSelf->isRunning) {
-                                                         [strongSelf emitAttitudeUpdate];
-                                                       }
-                                                     }];
+  dispatch_source_set_event_handler(heartbeatSource, ^{
+    RNAttitude *strongSelf = weakSelf;
+    if (strongSelf == nil || !strongSelf->isRunning) {
+      return;
+    }
+    dispatch_async(dispatch_get_main_queue(), ^{
+      RNAttitude *mainSelf = weakSelf;
+      if (mainSelf != nil && mainSelf->isRunning) {
+        [mainSelf emitAttitudeUpdate];
+      }
+    });
+  });
+  dispatch_resume(heartbeatSource);
 }
 
 - (void)stopHeartbeatTimer
 {
-  [heartbeatTimer invalidate];
-  heartbeatTimer = nil;
+  if (heartbeatSource != nil) {
+    dispatch_source_cancel(heartbeatSource);
+    heartbeatSource = nil;
+  }
 }
 
 - (void)stopObserving
