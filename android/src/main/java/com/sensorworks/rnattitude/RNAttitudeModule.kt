@@ -53,6 +53,31 @@ class RNAttitudeModule(reactContext: ReactApplicationContext) :
     promise.resolve(rotationSensor != null)
   }
 
+  override fun getAvailableSensors(promise: Promise) {
+    val types =
+      listOf(
+        Sensor.TYPE_ACCELEROMETER to "accelerometer",
+        Sensor.TYPE_GYROSCOPE to "gyroscope",
+        Sensor.TYPE_MAGNETIC_FIELD to "magnetometer",
+        Sensor.TYPE_ROTATION_VECTOR to "rotationVector",
+      )
+    val result = Arguments.createArray()
+    for ((type, id) in types) {
+      for (sensor in sensorManager.getSensorList(type)) {
+        val map = Arguments.createMap()
+        map.putString("id", id)
+        map.putString("name", sensor.name)
+        map.putString("vendor", sensor.vendor)
+        map.putDouble("version", sensor.version.toDouble())
+        map.putDouble("maxRange", sensor.maximumRange.toDouble())
+        map.putDouble("resolution", sensor.resolution.toDouble())
+        map.putDouble("minDelayUs", sensor.minDelay.toDouble())
+        result.pushMap(map)
+      }
+    }
+    promise.resolve(result)
+  }
+
   override fun zero() {
     pitchOffset = -eulerAngles[0]
     rollOffset = -eulerAngles[1]

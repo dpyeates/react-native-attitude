@@ -53,6 +53,9 @@ Attitude.clearWatch(watchId);
 Attitude.stopObserving();
 
 const supported = await Attitude.isSupported();
+const sensors = await Attitude.getAvailableSensors();
+// sensors[].id — accelerometer | gyroscope | magnetometer | rotationVector (Android)
+//                 accelerometer | gyroscope | magnetometer | deviceMotion | heading (iOS)
 ```
 
 ## Example app
@@ -66,7 +69,7 @@ npm run android
 npm run ios
 ```
 
-The example shows live roll/pitch/heading, an artificial horizon, and controls for zero/reset plus update-rate presets (1/5/10/20/40 Hz).
+The example shows live roll/pitch/heading, an artificial horizon, controls for zero/reset plus update-rate presets (1/5/10/20/40 Hz), and the list from `getAvailableSensors()`.
 
 ## License
 

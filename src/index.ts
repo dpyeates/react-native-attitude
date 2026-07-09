@@ -3,9 +3,10 @@ import type { EventSubscription } from 'react-native';
 import {
   getNativeRNAttitude,
   type AttitudePayload,
+  type MotionSensorInfo,
 } from './NativeRNAttitude';
 
-export type { AttitudePayload };
+export type { AttitudePayload, MotionSensorInfo };
 export type OutputMode = 'both' | 'attitude' | 'heading';
 export type RotationMode = 'none' | 'left' | 'right';
 export type UpdateRateHz = 1 | 5 | 10 | 20 | 40;
@@ -75,6 +76,10 @@ const Attitude = {
 
   async isSupported(): Promise<boolean> {
     return getNativeModule().isSupported();
+  },
+
+  async getAvailableSensors(): Promise<MotionSensorInfo[]> {
+    return getNativeModule().getAvailableSensors() as Promise<MotionSensorInfo[]>;
   },
 
   setOutput(output: OutputMode): void {

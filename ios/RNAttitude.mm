@@ -154,6 +154,41 @@ static NSInteger intervalMillisForInterval(double interval);
   resolve(@(supported));
 }
 
+- (void)getAvailableSensors:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
+{
+  NSMutableArray *sensors = [NSMutableArray new];
+
+  void (^addSensor)(NSString *, NSString *) = ^(NSString *sensorId, NSString *name) {
+    [sensors addObject:@{
+      @"id": sensorId,
+      @"name": name,
+      @"vendor": @"",
+      @"version": @0,
+      @"maxRange": @0,
+      @"resolution": @0,
+      @"minDelayUs": @0,
+    }];
+  };
+
+  if (motionManager.isAccelerometerAvailable) {
+    addSensor(@"accelerometer", @"Accelerometer");
+  }
+  if (motionManager.isGyroAvailable) {
+    addSensor(@"gyroscope", @"Gyroscope");
+  }
+  if (motionManager.isMagnetometerAvailable) {
+    addSensor(@"magnetometer", @"Magnetometer");
+  }
+  if (motionManager.isDeviceMotionAvailable) {
+    addSensor(@"deviceMotion", @"Device Motion");
+  }
+  if ([CLLocationManager headingAvailable]) {
+    addSensor(@"heading", @"Heading");
+  }
+
+  resolve(sensors);
+}
+
 - (void)zero
 {
   pitchOffset = -pitch;

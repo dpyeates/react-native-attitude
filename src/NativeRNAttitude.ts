@@ -8,6 +8,16 @@ export type AttitudePayload = {
   heading: number;
 };
 
+export type MotionSensorInfo = {
+  id: string;
+  name: string;
+  vendor: string;
+  version: number;
+  maxRange: number;
+  resolution: number;
+  minDelayUs: number;
+};
+
 export interface Spec extends TurboModule {
   readonly onAttitudeUpdate: CodegenTypes.EventEmitter<AttitudePayload>;
   zero(): void;
@@ -18,6 +28,7 @@ export interface Spec extends TurboModule {
   startObserving(): void;
   stopObserving(): void;
   isSupported(): Promise<boolean>;
+  getAvailableSensors(): Promise<ReadonlyArray<MotionSensorInfo>>;
   addListener(eventName: string): void;
   removeListeners(count: number): void;
 }

@@ -1,7 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
-import Attitude, { type AttitudePayload, type UpdateRateHz } from 'react-native-attitude';
+import Attitude, {
+  type AttitudePayload,
+  type MotionSensorInfo,
+  type UpdateRateHz,
+} from 'react-native-attitude';
 
 const DEFAULT_RATE_HZ: UpdateRateHz = 5;
 const PITCH_PX_PER_DEG = 4;
@@ -56,6 +60,7 @@ function Metric({ label, value }: { label: string; value: string }) {
 
 export default function App() {
   const [supported, setSupported] = useState<boolean | null>(null);
+  const [sensors, setSensors] = useState<MotionSensorInfo[]>([]);
   const [data, setData] = useState(INITIAL);
   const [rateHz, setRateHz] = useState<UpdateRateHz>(DEFAULT_RATE_HZ);
   const watchId = useRef<number | null>(null);
@@ -65,6 +70,7 @@ export default function App() {
     Attitude.setRotation('none');
     Attitude.setInterval(rateHz);
     void Attitude.isSupported().then(setSupported);
+    void Attitude.getAvailableSensors().then(setSensors);
 
     watchId.current = Attitude.watch(setData);
 
@@ -84,7 +90,11 @@ export default function App() {
     <SafeAreaProvider>
       <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
         <StatusBar barStyle="dark-content" />
-        <View style={styles.content}>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+        >
           {supported === false && (
             <Text style={styles.warning}>
               Attitude is not supported on this device.
@@ -125,7 +135,39 @@ export default function App() {
               );
             })}
           </View>
-        </View>
+
+          <Text style={styles.sectionLabel}>
+            Available sensors ({sensors.length})
+          </Text>
+          <View style={styles.card}>
+            {sensors.length === 0 ? (
+              <Text style={styles.sensorEmpty}>None reported yet.</Text>
+            ) : (
+              sensors.map((sensor, index) => (
+                <View
+                  key={`${sensor.id}-${sensor.name}-${index}`}
+                  style={[
+                    styles.sensorRow,
+                    index > 0 && styles.sensorRowBorder,
+                  ]}
+                >
+                  <View style={styles.sensorText}>
+                    <Text style={styles.sensorId}>{sensor.id}</Text>
+                    <Text style={styles.sensorName}>
+                      {sensor.name}
+                      {sensor.vendor ? ` · ${sensor.vendor}` : ''}
+                    </Text>
+                  </View>
+                  {sensor.minDelayUs > 0 && (
+                    <Text style={styles.sensorMeta}>
+                      {(1_000_000 / sensor.minDelayUs).toFixed(0)} Hz max
+                    </Text>
+                  )}
+                </View>
+              ))
+            )}
+          </View>
+        </ScrollView>
       </SafeAreaView>
     </SafeAreaProvider>
   );
@@ -136,10 +178,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f1f5f9',
   },
-  content: {
+  scroll: {
     flex: 1,
+  },
+  content: {
     padding: 16,
     gap: 16,
+    flexGrow: 1,
   },
   warning: {
     color: '#b45309',
@@ -265,5 +310,40 @@ const styles = StyleSheet.create({
   },
   chipLabelSelected: {
     color: '#fff',
+  },
+  sensorEmpty: {
+    color: '#94a3b8',
+    fontSize: 14,
+  },
+  sensorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingVertical: 4,
+  },
+  sensorRowBorder: {
+    borderTopWidth: 1,
+    borderTopColor: '#e2e8f0',
+    paddingTop: 10,
+    marginTop: 6,
+  },
+  sensorText: {
+    flex: 1,
+    gap: 2,
+  },
+  sensorId: {
+    color: '#0f172a',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  sensorName: {
+    color: '#64748b',
+    fontSize: 13,
+  },
+  sensorMeta: {
+    color: '#64748b',
+    fontSize: 12,
+    fontVariant: ['tabular-nums'],
   },
 });

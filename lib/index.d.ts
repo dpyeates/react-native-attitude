@@ -1,5 +1,5 @@
-import { type AttitudePayload } from './NativeRNAttitude';
-export type { AttitudePayload };
+import { type AttitudePayload, type MotionSensorInfo } from './NativeRNAttitude';
+export type { AttitudePayload, MotionSensorInfo };
 export type OutputMode = 'both' | 'attitude' | 'heading';
 export type RotationMode = 'none' | 'left' | 'right';
 export type UpdateRateHz = 1 | 5 | 10 | 20 | 40;
@@ -11,6 +11,7 @@ declare const Attitude: {
     zero(): void;
     reset(): void;
     isSupported(): Promise<boolean>;
+    getAvailableSensors(): Promise<MotionSensorInfo[]>;
     setOutput(output: OutputMode): void;
     setInterval(rateHz: UpdateRateHz): void;
     setRotation(rotation: RotationMode): void;
