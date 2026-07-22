@@ -1,7 +1,7 @@
 import { type AttitudePayload, type MotionSensorInfo } from './NativeRNAttitude';
 export type { AttitudePayload, MotionSensorInfo };
 export type OutputMode = 'both' | 'attitude' | 'heading';
-export type RotationMode = 'none' | 'left' | 'right';
+export type RotationMode = 'none' | 'left' | 'right' | 'upsidedown' | 'auto';
 export type UpdateRateHz = 1 | 5 | 10 | 20 | 40;
 type WatchCallback = (payload: AttitudePayload) => void;
 declare const Attitude: {

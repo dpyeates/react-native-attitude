@@ -1426,7 +1426,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - react-native-attitude (3.0.0):
+  - react-native-attitude (3.1.0):
     - hermes-engine
     - RCTRequired
     - RCTTypeSafety
@@ -2193,7 +2193,7 @@ SPEC CHECKSUMS:
   React-Mapbuffer: ce449ccdf3b80384415b925606be8a4bdcfc65d3
   React-microtasksnativemodule: 2eb3f49d0d8e77b5343455eccd057010b8d38b6b
   React-mutationobservernativemodule: f0a0d5ae9b51caf7becbeabf836d716cfedb6bf2
-  react-native-attitude: 356b3095f6e526982c8ed9dd51584ff86f7ef74c
+  react-native-attitude: dd2e20d43361ec389165c6428921c67ecc364046
   react-native-safe-area-context: fb5c8ee9f6dd62ef710611b3d370c501f42a4ac0
   React-NativeModulesApple: a092d89b58f635ebfab88048b0eda9fb516819fd
   React-networking: 968bbbe73590149feb1e72b2af4f6a68e4796ece
@@ -2234,4 +2234,4 @@ SPEC CHECKSUMS:
 
 PODFILE CHECKSUM: 4abe38ad3a4a0ee5f08905d6ea74caf75b7ab89a
 
-COCOAPODS: 1.15.2
+COCOAPODS: 1.17.0

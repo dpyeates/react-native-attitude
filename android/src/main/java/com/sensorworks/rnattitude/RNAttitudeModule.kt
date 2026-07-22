@@ -5,8 +5,15 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.hardware.display.DisplayManager
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import android.view.Display
+import android.view.Surface
+import android.view.WindowManager
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.LifecycleEventListener
 import com.facebook.react.bridge.Promise
@@ -29,9 +36,21 @@ class RNAttitudeModule(reactContext: ReactApplicationContext) :
   private var intervalMillis = 200
   private var nextSampleTime = 0L
   private var lastEmitTimeMs = 0L
-  private var rotation = ROTATE_NONE
+  @Volatile private var rotation = ROTATE_NONE
   private var output = OUTPUT_BOTH
   private var isRunning = false
+  @Volatile private var autoRotation = false
+  private val mainHandler = Handler(Looper.getMainLooper())
+  private val displayManager: DisplayManager =
+    reactContext.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+  private val displayListener =
+    object : DisplayManager.DisplayListener {
+      override fun onDisplayAdded(displayId: Int) {}
+      override fun onDisplayRemoved(displayId: Int) {}
+      override fun onDisplayChanged(displayId: Int) {
+        updateAutoRotationBaseline()
+      }
+    }
   private var pitchOffset = 0f
   private var rollOffset = 0f
   private var headingLast = 0f
@@ -121,19 +140,86 @@ class RNAttitudeModule(reactContext: ReactApplicationContext) :
   }
 
   override fun setRotation(rotationIn: String) {
-    rotation =
+    if (rotationIn.lowercase() == "auto") {
+      startAutoRotationTracking()
+      return
+    }
+    stopAutoRotationTracking()
+    val newRotation =
       when (rotationIn.lowercase()) {
         "none" -> ROTATE_NONE
         "left" -> ROTATE_LEFT
         "right" -> ROTATE_RIGHT
+        "upsidedown" -> ROTATE_UPSIDEDOWN
         else -> {
           Log.e(
             TAG,
-            "Unrecognised rotation passed to react-native-attitude, must be 'none','left' or 'right' only"
+            "Unrecognised rotation passed to react-native-attitude, must be 'none','left','right','upsidedown' or 'auto' only"
           )
           rotation
         }
       }
+    applyRotation(newRotation)
+  }
+
+  /**
+   * Auto rotation mode: follow the current display rotation so pitch/roll/heading stay
+   * correct even when the OS rotates the screen (or refuses an orientation lock, as it
+   * does on Android 16+ large screens).
+   */
+  private fun startAutoRotationTracking() {
+    if (autoRotation) {
+      updateAutoRotationBaseline()
+      return
+    }
+    autoRotation = true
+    displayManager.registerDisplayListener(displayListener, mainHandler)
+    updateAutoRotationBaseline()
+  }
+
+  private fun stopAutoRotationTracking() {
+    if (!autoRotation) {
+      return
+    }
+    autoRotation = false
+    displayManager.unregisterDisplayListener(displayListener)
+  }
+
+  private fun updateAutoRotationBaseline() {
+    if (!autoRotation) {
+      return
+    }
+    val newRotation =
+      when (currentDisplayRotation()) {
+        Surface.ROTATION_90 -> ROTATE_LEFT
+        Surface.ROTATION_180 -> ROTATE_UPSIDEDOWN
+        Surface.ROTATION_270 -> ROTATE_RIGHT
+        else -> ROTATE_NONE
+      }
+    if (newRotation != rotation) {
+      applyRotation(newRotation)
+    }
+  }
+
+  private fun currentDisplayRotation(): Int {
+    val display: Display? =
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        reactApplicationContext.currentActivity?.display
+          ?: displayManager.getDisplay(Display.DEFAULT_DISPLAY)
+      } else {
+        @Suppress("DEPRECATION")
+        (reactApplicationContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager)
+          .defaultDisplay
+      }
+    return display?.rotation ?: Surface.ROTATION_0
+  }
+
+  /**
+   * Applies a rotation baseline: updates the coordinate remap mode and clears any
+   * zero() offsets (they are baseline-relative).
+   */
+  private fun applyRotation(newRotation: Int) {
+    rotation = newRotation
     reset()
   }
 
@@ -166,6 +252,8 @@ class RNAttitudeModule(reactContext: ReactApplicationContext) :
   override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
   override fun onHostResume() {
+    // The display rotation may have changed while paused.
+    updateAutoRotationBaseline()
     if (isRunning && rotationSensor != null) {
       val samplingUs = samplingPeriodUs()
       sensorManager.registerListener(this, rotationSensor, samplingUs, samplingUs)
@@ -179,6 +267,7 @@ class RNAttitudeModule(reactContext: ReactApplicationContext) :
   }
 
   override fun onHostDestroy() {
+    stopAutoRotationTracking()
     stopObserving()
   }
 
@@ -206,6 +295,13 @@ class RNAttitudeModule(reactContext: ReactApplicationContext) :
           rotationMatrix,
           SensorManager.AXIS_MINUS_Z,
           SensorManager.AXIS_X,
+          remappedMatrix
+        )
+      ROTATE_UPSIDEDOWN ->
+        SensorManager.remapCoordinateSystem(
+          rotationMatrix,
+          SensorManager.AXIS_MINUS_X,
+          SensorManager.AXIS_MINUS_Z,
           remappedMatrix
         )
       else ->
@@ -364,6 +460,7 @@ class RNAttitudeModule(reactContext: ReactApplicationContext) :
     private const val ROTATE_NONE = 0
     private const val ROTATE_LEFT = 1
     private const val ROTATE_RIGHT = 2
+    private const val ROTATE_UPSIDEDOWN = 3
     private const val OUTPUT_BOTH = 0
     private const val OUTPUT_ATTITUDE = 1
     private const val OUTPUT_HEADING = 2

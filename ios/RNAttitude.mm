@@ -11,6 +11,7 @@
 #define ROTATE_NONE 0
 #define ROTATE_LEFT 1
 #define ROTATE_RIGHT 2
+#define ROTATE_UPSIDEDOWN 3
 
 #define AXIS_X 1
 #define AXIS_Y 2
@@ -41,8 +42,10 @@ static NSInteger intervalMillisForInterval(double interval);
   CMMotionManager *motionManager;
   NSOperationQueue *attitudeQueue;
   BOOL wasRunningBeforeBackground;
+  BOOL autoRotation;
   id backgroundObserver;
   id foregroundObserver;
+  id orientationObserver;
   long long nextEmitTimeMs;
   long long lastEmitTimeMs;
   double lastEmittedRoll;
@@ -66,6 +69,8 @@ static NSInteger intervalMillisForInterval(double interval);
     heading = 0;
     output = RNAttitudeOutputBoth;
     wasRunningBeforeBackground = NO;
+    autoRotation = NO;
+    orientationObserver = nil;
     nextEmitTimeMs = 0;
     lastEmitTimeMs = 0;
     hasEmittedSample = NO;
@@ -112,6 +117,9 @@ static NSInteger intervalMillisForInterval(double interval);
   if (foregroundObserver != nil) {
     [center removeObserver:foregroundObserver];
   }
+  if (orientationObserver != nil) {
+    [center removeObserver:orientationObserver];
+  }
 }
 
 + (NSString *)moduleName
@@ -135,6 +143,10 @@ static NSInteger intervalMillisForInterval(double interval);
 
 - (void)handleBecomeActive
 {
+  if (autoRotation) {
+    // The interface orientation may have changed while backgrounded.
+    [self updateAutoRotationBaseline];
+  }
   if (wasRunningBeforeBackground) {
     wasRunningBeforeBackground = NO;
     [self startObserving];
@@ -239,19 +251,152 @@ static NSInteger intervalMillisForInterval(double interval);
 - (void)setRotation:(NSString *)rotationIn
 {
   NSString *lowercaseRotation = [rotationIn lowercaseString];
+  if ([lowercaseRotation isEqualToString:@"auto"]) {
+    [self startAutoRotationTracking];
+    return;
+  }
+  [self stopAutoRotationTracking];
   if ([lowercaseRotation isEqualToString:@"none"]) {
-    rotation = ROTATE_NONE;
-    locationManager.headingOrientation = CLDeviceOrientationPortrait;
+    [self applyRotation:ROTATE_NONE];
   } else if ([lowercaseRotation isEqualToString:@"left"]) {
-    rotation = ROTATE_LEFT;
-    locationManager.headingOrientation = CLDeviceOrientationLandscapeLeft;
+    [self applyRotation:ROTATE_LEFT];
   } else if ([lowercaseRotation isEqualToString:@"right"]) {
-    rotation = ROTATE_RIGHT;
-    locationManager.headingOrientation = CLDeviceOrientationLandscapeRight;
+    [self applyRotation:ROTATE_RIGHT];
+  } else if ([lowercaseRotation isEqualToString:@"upsidedown"]) {
+    [self applyRotation:ROTATE_UPSIDEDOWN];
   } else {
-    NSLog(@"Unrecognised rotation passed to react-native-attitude, must be 'none','left' or 'right' only");
+    NSLog(@"Unrecognised rotation passed to react-native-attitude, must be 'none','left','right','upsidedown' or 'auto' only");
+  }
+}
+
+/**
+ * Applies a rotation baseline: updates the coordinate remap mode, the heading
+ * reference orientation and clears any zero() offsets (they are baseline-relative).
+ */
+- (void)applyRotation:(NSInteger)rotationMode
+{
+  rotation = rotationMode;
+  switch (rotationMode) {
+    case ROTATE_LEFT:
+      locationManager.headingOrientation = CLDeviceOrientationLandscapeLeft;
+      break;
+    case ROTATE_RIGHT:
+      locationManager.headingOrientation = CLDeviceOrientationLandscapeRight;
+      break;
+    case ROTATE_UPSIDEDOWN:
+      locationManager.headingOrientation = CLDeviceOrientationPortraitUpsideDown;
+      break;
+    case ROTATE_NONE:
+    default:
+      locationManager.headingOrientation = CLDeviceOrientationPortrait;
+      break;
   }
   [self reset];
+}
+
+/**
+ * Auto rotation mode: follow the current interface orientation so pitch/roll/heading
+ * stay correct even when the OS rotates the screen (or refuses an orientation lock,
+ * as it may on iPadOS 26+ tablets).
+ */
+- (void)startAutoRotationTracking
+{
+  if (autoRotation) {
+    [self updateAutoRotationBaseline];
+    return;
+  }
+  autoRotation = YES;
+  __weak RNAttitude *weakSelf = self;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [[UIDevice currentDevice] beginGeneratingDeviceOrientationNotifications];
+  });
+  orientationObserver = [[NSNotificationCenter defaultCenter]
+      addObserverForName:UIDeviceOrientationDidChangeNotification
+                  object:nil
+                   queue:[NSOperationQueue mainQueue]
+              usingBlock:^(__unused NSNotification *note) {
+                // The interface rotation animation lags the device orientation change;
+                // re-read the actual interface orientation shortly after.
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)),
+                               dispatch_get_main_queue(), ^{
+                                 [weakSelf updateAutoRotationBaseline];
+                               });
+                [weakSelf updateAutoRotationBaseline];
+              }];
+  [self updateAutoRotationBaseline];
+}
+
+- (void)stopAutoRotationTracking
+{
+  if (!autoRotation) {
+    return;
+  }
+  autoRotation = NO;
+  if (orientationObserver != nil) {
+    [[NSNotificationCenter defaultCenter] removeObserver:orientationObserver];
+    orientationObserver = nil;
+  }
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [[UIDevice currentDevice] endGeneratingDeviceOrientationNotifications];
+  });
+}
+
+- (void)updateAutoRotationBaseline
+{
+  if (!autoRotation) {
+    return;
+  }
+  void (^update)(void) = ^{
+    UIInterfaceOrientation interfaceOrientation = [self currentInterfaceOrientation];
+    NSInteger newRotation;
+    switch (interfaceOrientation) {
+      // Interface landscapeRight corresponds to device orientation landscapeLeft and vice versa.
+      case UIInterfaceOrientationLandscapeRight:
+        newRotation = ROTATE_LEFT;
+        break;
+      case UIInterfaceOrientationLandscapeLeft:
+        newRotation = ROTATE_RIGHT;
+        break;
+      case UIInterfaceOrientationPortraitUpsideDown:
+        newRotation = ROTATE_UPSIDEDOWN;
+        break;
+      case UIInterfaceOrientationPortrait:
+        newRotation = ROTATE_NONE;
+        break;
+      default:
+        return; // unknown - keep the current baseline
+    }
+    if (newRotation != self->rotation) {
+      [self applyRotation:newRotation];
+    }
+  };
+  if ([NSThread isMainThread]) {
+    update();
+  } else {
+    dispatch_async(dispatch_get_main_queue(), update);
+  }
+}
+
+/** Must be called on the main thread. */
+- (UIInterfaceOrientation)currentInterfaceOrientation
+{
+  UIWindowScene *foregroundScene = nil;
+  for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+    if (![scene isKindOfClass:[UIWindowScene class]]) {
+      continue;
+    }
+    if (scene.activationState == UISceneActivationStateForegroundActive) {
+      foregroundScene = (UIWindowScene *)scene;
+      break;
+    }
+    if (foregroundScene == nil) {
+      foregroundScene = (UIWindowScene *)scene;
+    }
+  }
+  if (foregroundScene != nil) {
+    return foregroundScene.interfaceOrientation;
+  }
+  return UIInterfaceOrientationUnknown;
 }
 
 - (void)startObserving
@@ -278,6 +423,8 @@ static NSInteger intervalMillisForInterval(double interval);
           remapCoordinateSystem(rotationMatrix, AXIS_Z, AXIS_MINUS_X, remappedMatrix);
         } else if (strongSelf->rotation == ROTATE_RIGHT) {
           remapCoordinateSystem(rotationMatrix, AXIS_MINUS_Z, AXIS_X, remappedMatrix);
+        } else if (strongSelf->rotation == ROTATE_UPSIDEDOWN) {
+          remapCoordinateSystem(rotationMatrix, AXIS_MINUS_X, AXIS_MINUS_Z, remappedMatrix);
         } else {
           remapCoordinateSystem(rotationMatrix, AXIS_X, AXIS_Z, remappedMatrix);
         }

@@ -45,7 +45,7 @@ const watchId = Attitude.watch((payload) => {
 });
 
 Attitude.setInterval(5);         // 1 | 5 | 10 | 20 | 40 (Hz)
-Attitude.setRotation('none');    // 'none' | 'left' | 'right'
+Attitude.setRotation('auto');    // 'none' | 'left' | 'right' | 'upsidedown' | 'auto'
 Attitude.setOutput('both');      // 'both' | 'attitude' | 'heading'
 Attitude.zero();
 Attitude.reset();
@@ -58,6 +58,22 @@ const sensors = await Attitude.getAvailableSensors();
 //                 accelerometer | gyroscope | magnetometer | deviceMotion | heading (iOS)
 ```
 
+### Rotation baseline
+
+`setRotation()` tells the module which screen orientation is "level", so that pitch stays
+nose up/down and roll stays wing left/right regardless of how the device is mounted:
+
+- `'none'` — portrait (default)
+- `'left'` / `'right'` — landscape, device rotated left/right from portrait
+- `'upsidedown'` — portrait, upside down
+- `'auto'` — track the current interface orientation natively and update the baseline
+  whenever the screen rotates
+
+`'auto'` is the recommended mode on iPadOS 26+ and Android 16+, where apps can no longer
+force a fixed screen orientation on tablets: attitude output stays correct even if the OS
+rotates the interface. Changing the baseline (including automatic changes in `'auto'` mode)
+clears any offsets applied with `zero()`.
+
 ## Example app
 
 ```sh
@@ -69,7 +85,7 @@ npm run android
 npm run ios
 ```
 
-The example shows live roll/pitch/heading, an artificial horizon, controls for zero/reset plus update-rate presets (1/5/10/20/40 Hz), and the list from `getAvailableSensors()`.
+The example shows live roll/pitch/heading, an artificial horizon, controls for zero/reset plus update-rate presets (1/5/10/20/40 Hz), rotation baseline selection (none/left/right/upside down/auto), and the list from `getAvailableSensors()`.
 
 ## License
 

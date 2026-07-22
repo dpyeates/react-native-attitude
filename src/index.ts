@@ -8,7 +8,7 @@ import {
 
 export type { AttitudePayload, MotionSensorInfo };
 export type OutputMode = 'both' | 'attitude' | 'heading';
-export type RotationMode = 'none' | 'left' | 'right';
+export type RotationMode = 'none' | 'left' | 'right' | 'upsidedown' | 'auto';
 export type UpdateRateHz = 1 | 5 | 10 | 20 | 40;
 
 const RATE_MS: Record<UpdateRateHz, number> = {

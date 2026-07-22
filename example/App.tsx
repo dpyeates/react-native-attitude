@@ -1,13 +1,24 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
+import {
+  Dimensions,
+  Platform,
+  Pressable,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import Attitude, {
   type AttitudePayload,
   type MotionSensorInfo,
+  type RotationMode,
   type UpdateRateHz,
 } from 'react-native-attitude';
 
 const DEFAULT_RATE_HZ: UpdateRateHz = 5;
+const DEFAULT_ROTATION: RotationMode = 'auto';
 const PITCH_PX_PER_DEG = 4;
 
 const RATES: { label: string; hz: UpdateRateHz }[] = [
@@ -17,6 +28,25 @@ const RATES: { label: string; hz: UpdateRateHz }[] = [
   { label: '20 Hz', hz: 20 },
   { label: '40 Hz', hz: 40 },
 ];
+
+const ROTATIONS: { label: string; mode: RotationMode }[] = [
+  { label: 'None', mode: 'none' },
+  { label: 'Left', mode: 'left' },
+  { label: 'Right', mode: 'right' },
+  { label: 'Upside down', mode: 'upsidedown' },
+  { label: 'Auto', mode: 'auto' },
+];
+
+// Phones never display the interface upside down (iOS refuses to rotate to it on
+// iPhones, and Android phones do not offer reverse portrait either), so only offer
+// that baseline on tablets.
+const UPSIDEDOWN_SUPPORTED =
+  Platform.OS === 'ios'
+    ? Platform.isPad
+    : Math.min(
+        Dimensions.get('screen').width,
+        Dimensions.get('screen').height,
+      ) >= 600;
 
 const INITIAL: AttitudePayload = {
   timestamp: 0,
@@ -63,11 +93,12 @@ export default function App() {
   const [sensors, setSensors] = useState<MotionSensorInfo[]>([]);
   const [data, setData] = useState(INITIAL);
   const [rateHz, setRateHz] = useState<UpdateRateHz>(DEFAULT_RATE_HZ);
+  const [rotation, setRotation] = useState<RotationMode>(DEFAULT_ROTATION);
   const watchId = useRef<number | null>(null);
 
   useEffect(() => {
     Attitude.setOutput('both');
-    Attitude.setRotation('none');
+    Attitude.setRotation(DEFAULT_ROTATION);
     Attitude.setInterval(rateHz);
     void Attitude.isSupported().then(setSupported);
     void Attitude.getAvailableSensors().then(setSensors);
@@ -85,6 +116,10 @@ export default function App() {
   useEffect(() => {
     Attitude.setInterval(rateHz);
   }, [rateHz]);
+
+  useEffect(() => {
+    Attitude.setRotation(rotation);
+  }, [rotation]);
 
   return (
     <SafeAreaProvider>
@@ -129,6 +164,37 @@ export default function App() {
                   onPress={() => setRateHz(hz)}
                 >
                   <Text style={[styles.chipLabel, selected && styles.chipLabelSelected]}>
+                    {label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <Text style={styles.sectionLabel}>Rotation baseline</Text>
+          <View style={styles.rateRow}>
+            {ROTATIONS.map(({ label, mode }) => {
+              const selected = rotation === mode;
+              const disabled = mode === 'upsidedown' && !UPSIDEDOWN_SUPPORTED;
+              return (
+                <Pressable
+                  key={mode}
+                  testID={`rotation-${mode}`}
+                  disabled={disabled}
+                  style={[
+                    styles.chip,
+                    selected && styles.chipSelected,
+                    disabled && styles.chipDisabled,
+                  ]}
+                  onPress={() => setRotation(mode)}
+                >
+                  <Text
+                    style={[
+                      styles.chipLabel,
+                      selected && styles.chipLabelSelected,
+                      disabled && styles.chipLabelDisabled,
+                    ]}
+                  >
                     {label}
                   </Text>
                 </Pressable>
@@ -303,6 +369,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#2563eb',
     borderColor: '#2563eb',
   },
+  chipDisabled: {
+    opacity: 0.4,
+  },
   chipLabel: {
     fontSize: 12,
     fontWeight: '600',
@@ -310,6 +379,9 @@ const styles = StyleSheet.create({
   },
   chipLabelSelected: {
     color: '#fff',
+  },
+  chipLabelDisabled: {
+    color: '#94a3b8',
   },
   sensorEmpty: {
     color: '#94a3b8',
