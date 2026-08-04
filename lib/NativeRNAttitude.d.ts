@@ -25,6 +25,7 @@ export interface Spec extends TurboModule {
     stopObserving(): void;
     isSupported(): Promise<boolean>;
     getAvailableSensors(): Promise<ReadonlyArray<MotionSensorInfo>>;
+    requestMotionAuthorization(): Promise<boolean>;
     addListener(eventName: string): void;
     removeListeners(count: number): void;
 }

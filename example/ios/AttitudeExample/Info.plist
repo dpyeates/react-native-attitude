@@ -35,6 +35,8 @@
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Heading uses the device compass, which requires location access on iOS.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>Motion access is used to read device orientation.</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

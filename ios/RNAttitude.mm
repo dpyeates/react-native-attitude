@@ -5,6 +5,7 @@
 
 #define UPDATERATEHZ 5
 #define HEARTBEAT_INTERVAL_MS 1000
+#define MOTION_AUTH_TIMEOUT_SEC 30.0
 #define DEGTORAD 0.017453292
 #define RADTODEG 57.29577951
 
@@ -54,6 +55,10 @@ static NSInteger intervalMillisForInterval(double interval);
   BOOL hasEmittedSample;
   dispatch_source_t heartbeatSource;
   dispatch_queue_t heartbeatQueue;
+  NSMutableArray<RCTPromiseResolveBlock> *pendingMotionAuthResolvers;
+  dispatch_source_t motionAuthPollSource;
+  CMMotionActivityManager *motionAuthActivityManager;
+  NSDate *motionAuthDeadline;
 }
 
 - (instancetype)init
@@ -76,6 +81,10 @@ static NSInteger intervalMillisForInterval(double interval);
     hasEmittedSample = NO;
     heartbeatSource = nil;
     heartbeatQueue = dispatch_queue_create("com.sensorworks.rnattitude.heartbeat", DISPATCH_QUEUE_SERIAL);
+    pendingMotionAuthResolvers = [NSMutableArray new];
+    motionAuthPollSource = nil;
+    motionAuthActivityManager = nil;
+    motionAuthDeadline = nil;
 
     locationManager = [[CLLocationManager alloc] init];
     locationManager.delegate = self;
@@ -110,6 +119,8 @@ static NSInteger intervalMillisForInterval(double interval);
 - (void)dealloc
 {
   [self stopHeartbeatTimer];
+  // Resolve any in-flight auth promises so JS callers are not left hanging.
+  [self settlePendingMotionAuthorization:NO];
   NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
   if (backgroundObserver != nil) {
     [center removeObserver:backgroundObserver];
@@ -199,6 +210,131 @@ static NSInteger intervalMillisForInterval(double interval);
   }
 
   resolve(sensors);
+}
+
+- (void)requestMotionAuthorization:(RCTPromiseResolveBlock)resolve
+                            reject:(RCTPromiseRejectBlock)reject
+{
+  CMAuthorizationStatus status = [CMMotionActivityManager authorizationStatus];
+  if (status == CMAuthorizationStatusAuthorized) {
+    resolve(@(YES));
+    return;
+  }
+  if (status == CMAuthorizationStatusDenied || status == CMAuthorizationStatusRestricted) {
+    resolve(@(NO));
+    return;
+  }
+
+  // NotDetermined
+  if (!motionManager.isDeviceMotionAvailable || ![CMMotionActivityManager isActivityAvailable]) {
+    resolve(@(NO));
+    return;
+  }
+
+  @synchronized(self) {
+    [pendingMotionAuthResolvers addObject:[resolve copy]];
+    if (pendingMotionAuthResolvers.count > 1) {
+      // Another request is already waiting; share its result.
+      return;
+    }
+  }
+
+  motionAuthDeadline = [NSDate dateWithTimeIntervalSinceNow:MOTION_AUTH_TIMEOUT_SEC];
+  NSDate *now = [NSDate date];
+  motionAuthActivityManager = [[CMMotionActivityManager alloc] init];
+  __weak RNAttitude *weakSelf = self;
+  [motionAuthActivityManager queryActivityStartingFromDate:now
+                                                    toDate:now
+                                                   toQueue:[NSOperationQueue mainQueue]
+                                               withHandler:^(__unused NSArray<CMMotionActivity *> *_Nullable activities,
+                                                             NSError *_Nullable error) {
+                                                 RNAttitude *strongSelf = weakSelf;
+                                                 if (strongSelf == nil) {
+                                                   return;
+                                                 }
+                                                 if ([strongSelf finishMotionAuthorizationIfDetermined]) {
+                                                   return;
+                                                 }
+                                                 // Query finished but status never left NotDetermined
+                                                 // (unavailable hardware, certain errors, etc.).
+                                                 if (error != nil || ![CMMotionActivityManager isActivityAvailable]) {
+                                                   [strongSelf settlePendingMotionAuthorization:NO];
+                                                 }
+                                               }];
+
+  [self startMotionAuthPoll];
+}
+
+- (void)startMotionAuthPoll
+{
+  [self stopMotionAuthPoll];
+
+  motionAuthPollSource = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+  dispatch_source_set_timer(
+      motionAuthPollSource,
+      dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)),
+      (uint64_t)(0.1 * NSEC_PER_SEC),
+      (uint64_t)(0.05 * NSEC_PER_SEC));
+  __weak RNAttitude *weakSelf = self;
+  dispatch_source_set_event_handler(motionAuthPollSource, ^{
+    RNAttitude *strongSelf = weakSelf;
+    if (strongSelf != nil) {
+      [strongSelf finishMotionAuthorizationIfDetermined];
+    }
+  });
+  dispatch_resume(motionAuthPollSource);
+}
+
+- (void)stopMotionAuthPoll
+{
+  if (motionAuthPollSource != nil) {
+    dispatch_source_cancel(motionAuthPollSource);
+    motionAuthPollSource = nil;
+  }
+}
+
+/**
+ * Resolves all pending motion-auth promises and tears down poll/query state.
+ */
+- (void)settlePendingMotionAuthorization:(BOOL)authorized
+{
+  NSArray<RCTPromiseResolveBlock> *resolvers;
+  @synchronized(self) {
+    if (pendingMotionAuthResolvers.count == 0) {
+      [self stopMotionAuthPoll];
+      motionAuthActivityManager = nil;
+      motionAuthDeadline = nil;
+      return;
+    }
+    resolvers = [pendingMotionAuthResolvers copy];
+    [pendingMotionAuthResolvers removeAllObjects];
+  }
+  [self stopMotionAuthPoll];
+  motionAuthActivityManager = nil;
+  motionAuthDeadline = nil;
+  for (RCTPromiseResolveBlock resolve in resolvers) {
+    resolve(@(authorized));
+  }
+}
+
+/**
+ * @return YES if authorization left NotDetermined and pending promises were settled.
+ */
+- (BOOL)finishMotionAuthorizationIfDetermined
+{
+  CMAuthorizationStatus status = [CMMotionActivityManager authorizationStatus];
+  if (status == CMAuthorizationStatusNotDetermined) {
+    NSDate *deadline = motionAuthDeadline;
+    if (deadline != nil && [[NSDate date] compare:deadline] != NSOrderedAscending) {
+      // Timed out waiting for a determination (dialog abandoned / status stuck).
+      [self settlePendingMotionAuthorization:NO];
+      return YES;
+    }
+    return NO;
+  }
+
+  [self settlePendingMotionAuthorization:status == CMAuthorizationStatusAuthorized];
+  return YES;
 }
 
 - (void)zero

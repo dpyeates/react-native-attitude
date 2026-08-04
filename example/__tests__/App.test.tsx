@@ -16,6 +16,7 @@ const mockNativeAttitude = {
   stopObserving: jest.fn(),
   isSupported: jest.fn(() => Promise.resolve(true)),
   getAvailableSensors: jest.fn(() => Promise.resolve([])),
+  requestMotionAuthorization: jest.fn(() => Promise.resolve(true)),
   addListener: jest.fn(),
   removeListeners: jest.fn(),
 };

@@ -35,3 +35,4 @@ ios/build/
 # IDE
 .idea/
 .vscode/
+.settings/

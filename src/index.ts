@@ -82,6 +82,10 @@ const Attitude = {
     return getNativeModule().getAvailableSensors() as Promise<MotionSensorInfo[]>;
   },
 
+  async requestMotionAuthorization(): Promise<boolean> {
+    return getNativeModule().requestMotionAuthorization();
+  },
+
   setOutput(output: OutputMode): void {
     getNativeModule().setOutput(output);
   },

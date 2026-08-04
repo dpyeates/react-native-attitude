@@ -90,6 +90,7 @@ function Metric({ label, value }: { label: string; value: string }) {
 
 export default function App() {
   const [supported, setSupported] = useState<boolean | null>(null);
+  const [motionAuthorized, setMotionAuthorized] = useState<boolean | null>(null);
   const [sensors, setSensors] = useState<MotionSensorInfo[]>([]);
   const [data, setData] = useState(INITIAL);
   const [rateHz, setRateHz] = useState<UpdateRateHz>(DEFAULT_RATE_HZ);
@@ -97,15 +98,35 @@ export default function App() {
   const watchId = useRef<number | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
+
     Attitude.setOutput('both');
     Attitude.setRotation(DEFAULT_ROTATION);
     Attitude.setInterval(rateHz);
-    void Attitude.isSupported().then(setSupported);
-    void Attitude.getAvailableSensors().then(setSensors);
 
-    watchId.current = Attitude.watch(setData);
+    void (async () => {
+      const authorized = await Attitude.requestMotionAuthorization();
+      if (cancelled) {
+        return;
+      }
+      setMotionAuthorized(authorized);
+
+      void Attitude.isSupported().then((value) => {
+        if (!cancelled) {
+          setSupported(value);
+        }
+      });
+      void Attitude.getAvailableSensors().then((value) => {
+        if (!cancelled) {
+          setSensors(value);
+        }
+      });
+
+      watchId.current = Attitude.watch(setData);
+    })();
 
     return () => {
+      cancelled = true;
       if (watchId.current != null) {
         Attitude.clearWatch(watchId.current);
       }
@@ -130,6 +151,12 @@ export default function App() {
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
         >
+          {motionAuthorized === false && (
+            <Text style={styles.warning}>
+              Motion access was denied. Enable Motion & Fitness for this app in
+              Settings.
+            </Text>
+          )}
           {supported === false && (
             <Text style={styles.warning}>
               Attitude is not supported on this device.

@@ -30,6 +30,13 @@ Add to your app `Info.plist` when using heading:
 <string>Heading uses the device compass.</string>
 ```
 
+When calling `requestMotionAuthorization()`, also add:
+
+```xml
+<key>NSMotionUsageDescription</key>
+<string>Motion access is used to read device orientation.</string>
+```
+
 Then `cd ios && pod install`.
 
 ## Usage
@@ -52,6 +59,9 @@ Attitude.reset();
 Attitude.clearWatch(watchId);
 Attitude.stopObserving();
 
+const authorized = await Attitude.requestMotionAuthorization();
+// iOS: prompts for Motion & Fitness if needed; true when Authorized
+// Android: always true (no OS dialog)
 const supported = await Attitude.isSupported();
 const sensors = await Attitude.getAvailableSensors();
 // sensors[].id — accelerometer | gyroscope | magnetometer | rotationVector (Android)
