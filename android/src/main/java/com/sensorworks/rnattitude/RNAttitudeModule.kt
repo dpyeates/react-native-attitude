@@ -72,6 +72,10 @@ class RNAttitudeModule(reactContext: ReactApplicationContext) :
     promise.resolve(rotationSensor != null)
   }
 
+  override fun isMotionAuthorizationGranted(promise: Promise) {
+    promise.resolve(true)
+  }
+
   override fun requestMotionAuthorization(promise: Promise) {
     promise.resolve(true)
   }

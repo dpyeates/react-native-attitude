@@ -212,6 +212,13 @@ static NSInteger intervalMillisForInterval(double interval);
   resolve(sensors);
 }
 
+- (void)isMotionAuthorizationGranted:(RCTPromiseResolveBlock)resolve
+                              reject:(RCTPromiseRejectBlock)reject
+{
+  CMAuthorizationStatus status = [CMMotionActivityManager authorizationStatus];
+  resolve(@(status == CMAuthorizationStatusAuthorized));
+}
+
 - (void)requestMotionAuthorization:(RCTPromiseResolveBlock)resolve
                             reject:(RCTPromiseRejectBlock)reject
 {

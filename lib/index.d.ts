@@ -12,6 +12,7 @@ declare const Attitude: {
     reset(): void;
     isSupported(): Promise<boolean>;
     getAvailableSensors(): Promise<MotionSensorInfo[]>;
+    isMotionAuthorizationGranted(): Promise<boolean>;
     requestMotionAuthorization(): Promise<boolean>;
     setOutput(output: OutputMode): void;
     setInterval(rateHz: UpdateRateHz): void;
